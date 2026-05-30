@@ -1,0 +1,16 @@
+cat <<EOT >> .gitignore
+# Dependencias de Node / Vue
+node_modules/
+dist/
+.env
+
+# Archivos de entorno y caché de Python / FastAPI
+__pycache__/
+*.py[cod]
+venv/
+
+# Archivos de Base de Datos y Sistema Operativo
+*.sqlite
+*.sqlite3
+.DS_Store
+EOT
