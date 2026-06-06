@@ -1,7 +1,6 @@
 from datetime import datetime, timedelta, timezone
 from typing import Optional
-from jose import jwt # Wait, is it jose or pyjwt? Let's check requirements.txt. In requirements we added pyjwt.
-# Let's import jwt from jwt (PyJWT package imports as 'import jwt')
+# Using pyjwt package
 import jwt
 from passlib.context import CryptContext
 from app.config import settings
