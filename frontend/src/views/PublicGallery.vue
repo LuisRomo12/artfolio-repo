@@ -976,7 +976,7 @@ Obra visual catalogada en el portafolio ArtFolio.`"></textarea>
       <div class="sigil-icon-right"></div>
       
       <!-- Artist Portal Link -->
-      <router-link to="/login" class="admin-portal-link">
+      <router-link :to="{ path: '/login', query: { theme: 'gothic' } }" class="admin-portal-link">
         <span class="lock-icon">🔑</span> Acceso Artista
       </router-link>
     </header>
