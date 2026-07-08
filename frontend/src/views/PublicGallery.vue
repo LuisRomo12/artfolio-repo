@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted, onUnmounted, computed, watch } from 'vue'
 
 // API base URL
 const API_URL = 'http://localhost:8000'
@@ -10,7 +10,56 @@ const collections = ref([])
 const activeCollectionId = ref(null)
 const loading = ref(true)
 
-// Fallback Mock Data for Demo/Staging
+// Search & filter states
+const searchQuery = ref('')
+const selectedAvailability = ref('')
+const selectedSort = ref('newest')
+
+// UI States
+const selectedArtwork = ref(null)
+const monitorPower = ref(true)
+const showWelcome = ref(true)
+const showStartMenu = ref(false)
+const showWarningPopup = ref(false)
+const clockTime = ref('')
+
+// Draggable window coordinates
+const positions = ref({
+  welcome: { x: 280, y: 150 },
+  wordart: { x: 40, y: 30 },
+  smiley: { x: 820, y: 40 },
+  warning: { x: 50, y: 600 },
+  year: { x: 820, y: 600 },
+  textedit: { x: 480, y: 550 },
+  warningPopup: { x: 300, y: 300 }
+})
+
+// Draggable stickers
+const stickers = ref([
+  { id: 1, text: "Esouth on the track ⚡", x: 380, y: 40, rotation: -12, colorClass: "pink-vibe" },
+  { id: 2, text: "Born to Ride 🏁", x: 830, y: 250, rotation: 8, colorClass: "blue-vibe" },
+  { id: 3, text: "COMING SOON ☄️", x: 140, y: 320, rotation: -15, colorClass: "yellow-vibe" },
+  { id: 4, text: "Cyber Vibe 👾", x: 830, y: 440, rotation: -5, colorClass: "pink-vibe" }
+])
+
+// Background Cyber Stars
+const cyberStars = ref([
+  { id: 1, x: 80, y: 180, size: 45, color: '#ffff00', duration: '6s' },
+  { id: 2, x: 150, y: 500, size: 65, color: '#ff00ff', duration: '8s' },
+  { id: 3, x: 740, y: 190, size: 55, color: '#ff00ff', duration: '10s' },
+  { id: 4, x: 920, y: 420, size: 40, color: '#ffff00', duration: '5s' },
+  { id: 5, x: 720, y: 540, size: 30, color: '#00ffff', duration: '7s' }
+])
+
+// Drawing Canvas States
+const canvasRef = ref(null)
+const ctx = ref(null)
+const drawing = ref(false)
+const brushColor = ref('#ff00ff') // neon magenta default
+const activeTool = ref('brush') // 'pencil', 'brush', 'eraser'
+const brushSize = ref(4)
+
+// Fallback Mock Data
 const mockCollections = [
   { id: 1, nombre: "Mitologías Perdidas", descripcion: "Exploraciones pictóricas de mitos olvidados en el tiempo." },
   { id: 2, nombre: "Anatomía de la Melancolía", descripcion: "Estudios anatómicos y claroscuro de emociones humanas profundas." }
@@ -79,6 +128,73 @@ const mockArtworks = [
   }
 ]
 
+// Drag-and-drop mechanics
+const activeDrag = ref(null)
+
+const startDrag = (event, type, key) => {
+  event.preventDefault()
+  let clientX = event.clientX
+  let clientY = event.clientY
+  if (event.touches && event.touches.length > 0) {
+    clientX = event.touches[0].clientX
+    clientY = event.touches[0].clientY
+  }
+
+  let currentX, currentY
+  if (type === 'window') {
+    currentX = positions.value[key].x
+    currentY = positions.value[key].y
+  } else {
+    const idx = stickers.value.findIndex(s => s.id === key)
+    currentX = stickers.value[idx].x
+    currentY = stickers.value[idx].y
+  }
+
+  activeDrag.value = {
+    type,
+    key,
+    offsetX: clientX - currentX,
+    offsetY: clientY - currentY
+  }
+
+  document.addEventListener('mousemove', handleDrag)
+  document.addEventListener('mouseup', stopDrag)
+  document.addEventListener('touchmove', handleDrag, { passive: false })
+  document.addEventListener('touchend', stopDrag)
+}
+
+const handleDrag = (event) => {
+  if (!activeDrag.value) return
+  let clientX = event.clientX
+  let clientY = event.clientY
+  if (event.touches && event.touches.length > 0) {
+    clientX = event.touches[0].clientX
+    clientY = event.touches[0].clientY
+  }
+
+  const newX = clientX - activeDrag.value.offsetX
+  const newY = clientY - activeDrag.value.offsetY
+
+  if (activeDrag.value.type === 'window') {
+    positions.value[activeDrag.value.key].x = newX
+    positions.value[activeDrag.value.key].y = newY
+  } else {
+    const idx = stickers.value.findIndex(s => s.id === activeDrag.value.key)
+    if (idx !== -1) {
+      stickers.value[idx].x = newX
+      stickers.value[idx].y = newY
+    }
+  }
+}
+
+const stopDrag = () => {
+  activeDrag.value = null
+  document.removeEventListener('mousemove', handleDrag)
+  document.removeEventListener('mouseup', stopDrag)
+  document.removeEventListener('touchmove', handleDrag)
+  document.removeEventListener('touchend', stopDrag)
+}
+
 // Fetch data from API with fallback
 const fetchData = async () => {
   loading.value = true
@@ -96,6 +212,12 @@ const fetchData = async () => {
     collections.value = mockCollections
   } finally {
     loading.value = false
+    // Load first artwork on load
+    if (artworks.value.length > 0) {
+      selectArtwork(artworks.value[0])
+    } else {
+      initCanvas()
+    }
   }
 }
 
@@ -104,21 +226,734 @@ const setCollection = (id) => {
   activeCollectionId.value = id
 }
 
-// Computed property to filter artworks reactively
+// Computed property to filter artworks
 const filteredArtworks = computed(() => {
-  if (activeCollectionId.value === null) {
-    return artworks.value
+  let list = [...artworks.value]
+  
+  if (activeCollectionId.value !== null) {
+    list = list.filter(artwork => artwork.coleccion_id === activeCollectionId.value)
   }
-  return artworks.value.filter(artwork => artwork.coleccion_id === activeCollectionId.value)
+  
+  if (searchQuery.value.trim() !== '') {
+    const q = searchQuery.value.toLowerCase().trim()
+    list = list.filter(artwork => 
+      artwork.titulo.toLowerCase().includes(q) || 
+      artwork.tecnica.toLowerCase().includes(q)
+    )
+  }
+  
+  if (selectedAvailability.value !== '') {
+    list = list.filter(artwork => artwork.estado === selectedAvailability.value)
+  }
+  
+  list.sort((a, b) => {
+    if (selectedSort.value === 'newest') {
+      return new Date(b.created_at || 0) - new Date(a.created_at || 0)
+    } else if (selectedSort.value === 'oldest') {
+      return new Date(a.created_at || 0) - new Date(b.created_at || 0)
+    } else if (selectedSort.value === 'price-asc') {
+      const pA = a.precio !== null ? parseFloat(a.precio) : Infinity
+      const pB = b.precio !== null ? parseFloat(b.precio) : Infinity
+      return pA - pB
+    } else if (selectedSort.value === 'price-desc') {
+      const pA = a.precio !== null ? parseFloat(a.precio) : -Infinity
+      const pB = b.precio !== null ? parseFloat(b.precio) : -Infinity
+      return pB - pA
+    }
+    return 0
+  })
+  
+  return list
+})
+
+// Select Artwork file
+const selectArtwork = (art) => {
+  selectedArtwork.value = art
+  drawArtworkOnCanvas()
+}
+
+// WhatsApp link generator
+const getWhatsAppLink = (artwork) => {
+  const phoneNumber = '521234567890'
+  const text = encodeURIComponent(
+    `Hola, estoy interesado en adquirir tu obra de arte "${artwork.titulo}" (${artwork.tecnica}, ${artwork.dimensiones}) catalogada en tu portafolio ArtFolio.`
+  )
+  return `https://wa.me/${phoneNumber}?text=${text}`
+}
+
+// Start menu trigger
+const toggleStartMenu = () => {
+  showStartMenu.value = !showStartMenu.value
+}
+
+// Power off monitor switch
+const toggleMonitorPower = () => {
+  monitorPower.value = !monitorPower.value
+}
+
+// Clock logic
+const updateClock = () => {
+  const now = new Date()
+  let hours = now.getHours()
+  const ampm = hours >= 12 ? 'PM' : 'AM'
+  hours = hours % 12
+  hours = hours ? hours : 12 // the hour '0' should be '12'
+  const minutes = now.getMinutes().toString().padStart(2, '0')
+  clockTime.value = `${hours}:${minutes} ${ampm}`
+}
+
+// Canvas Painting Logic
+const initCanvas = () => {
+  const canvas = canvasRef.value
+  if (!canvas) return
+  ctx.value = canvas.getContext('2d', { willReadFrequently: true })
+  
+  canvas.width = 440
+  canvas.height = 290
+  
+  clearPaintArea()
+}
+
+const clearPaintArea = () => {
+  if (!ctx.value || !canvasRef.value) return
+  ctx.value.fillStyle = '#ffffff'
+  ctx.value.fillRect(0, 0, canvasRef.value.width, canvasRef.value.height)
+  
+  // If no artwork loaded, draw default "COMING SOON" Y2K logo
+  if (!selectedArtwork.value) {
+    drawDefaultStarburst()
+  }
+}
+
+const drawDefaultStarburst = () => {
+  const canvas = canvasRef.value
+  const cx = canvas.width / 2
+  const cy = canvas.height / 2
+  
+  // Starburst
+  ctx.value.fillStyle = '#ff00ff'
+  ctx.value.beginPath()
+  const spikes = 20
+  const outerRadius = 100
+  const innerRadius = 70
+  let rot = Math.PI / 2 * 3
+  const step = Math.PI / spikes
+  
+  ctx.value.moveTo(cx, cy - outerRadius)
+  for (let i = 0; i < spikes; i++) {
+    let x = cx + Math.cos(rot) * outerRadius
+    let y = cy + Math.sin(rot) * outerRadius
+    ctx.value.lineTo(x, y)
+    rot += step
+    
+    x = cx + Math.cos(rot) * innerRadius
+    y = cy + Math.sin(rot) * innerRadius
+    ctx.value.lineTo(x, y)
+    rot += step
+  }
+  ctx.value.lineTo(cx, cy - outerRadius)
+  ctx.value.closePath()
+  ctx.value.fill()
+  
+  // Text shadow/glow
+  ctx.value.fillStyle = '#000000'
+  ctx.value.font = 'bold 36px "VT323", monospace'
+  ctx.value.textAlign = 'center'
+  ctx.value.fillText('COMING SOON', cx + 3, cy + 13)
+  
+  ctx.value.fillStyle = '#ffff00'
+  ctx.value.fillText('COMING SOON', cx, cy + 10)
+}
+
+const drawArtworkOnCanvas = () => {
+  if (!ctx.value || !canvasRef.value) return
+  const canvas = canvasRef.value
+  
+  // Clear first
+  ctx.value.fillStyle = '#ffffff'
+  ctx.value.fillRect(0, 0, canvas.width, canvas.height)
+  
+  if (selectedArtwork.value) {
+    const img = new Image()
+    img.crossOrigin = 'anonymous'
+    img.onload = () => {
+      const canvasRatio = canvas.width / canvas.height
+      const imgRatio = img.width / img.height
+      let drawWidth, drawHeight, offsetX, offsetY
+      
+      if (imgRatio > canvasRatio) {
+        drawWidth = canvas.width
+        drawHeight = canvas.width / imgRatio
+        offsetX = 0
+        offsetY = (canvas.height - drawHeight) / 2
+      } else {
+        drawHeight = canvas.height
+        drawWidth = canvas.height * imgRatio
+        offsetX = (canvas.width - drawWidth) / 2
+        offsetY = 0
+      }
+      
+      ctx.value.drawImage(img, offsetX, offsetY, drawWidth, drawHeight)
+    }
+    img.src = selectedArtwork.value.imagen_url
+  } else {
+    drawDefaultStarburst()
+  }
+}
+
+const getMousePos = (event) => {
+  const canvas = canvasRef.value
+  const rect = canvas.getBoundingClientRect()
+  
+  let clientX = event.clientX
+  let clientY = event.clientY
+  
+  if (event.touches && event.touches.length > 0) {
+    clientX = event.touches[0].clientX
+    clientY = event.touches[0].clientY
+  }
+  
+  return {
+    x: ((clientX - rect.left) / rect.width) * canvas.width,
+    y: ((clientY - rect.top) / rect.height) * canvas.height
+  }
+}
+
+const startDrawing = (event) => {
+  drawing.value = true
+  const pos = getMousePos(event)
+  ctx.value.beginPath()
+  ctx.value.moveTo(pos.x, pos.y)
+  draw(event)
+}
+
+const draw = (event) => {
+  if (!drawing.value || !ctx.value) return
+  event.preventDefault()
+  const pos = getMousePos(event)
+  
+  ctx.value.lineCap = 'round'
+  ctx.value.lineJoin = 'round'
+  
+  if (activeTool.value === 'eraser') {
+    ctx.value.strokeStyle = '#ffffff'
+    ctx.value.lineWidth = 20
+  } else if (activeTool.value === 'pencil') {
+    ctx.value.strokeStyle = brushColor.value
+    ctx.value.lineWidth = 1
+  } else {
+    ctx.value.strokeStyle = brushColor.value
+    ctx.value.lineWidth = brushSize.value
+  }
+  
+  ctx.value.lineTo(pos.x, pos.y)
+  ctx.value.stroke()
+}
+
+const stopDrawing = () => {
+  drawing.value = false
+}
+
+// Eye pupils track cursor coordinate state
+const mouseCoord = ref({ x: 0, y: 0 })
+const updateMouseCoordinates = (e) => {
+  mouseCoord.value = { x: e.clientX, y: e.clientY }
+}
+
+const eyeOffset = computed(() => {
+  const smileyBox = document.querySelector('.smiley-box')
+  if (!smileyBox) return { x: 0, y: 0 }
+  const rect = smileyBox.getBoundingClientRect()
+  const smileyCenterX = rect.left + rect.width / 2
+  const smileyCenterY = rect.top + rect.height / 2
+  
+  const angle = Math.atan2(mouseCoord.value.y - smileyCenterY, mouseCoord.value.x - smileyCenterX)
+  // Max move pupil 3px
+  return {
+    x: Math.cos(angle) * 3,
+    y: Math.sin(angle) * 3
+  }
+})
+
+watch(selectedArtwork, () => {
+  drawArtworkOnCanvas()
 })
 
 onMounted(() => {
   fetchData()
+  updateClock()
+  setInterval(updateClock, 1000)
+  window.addEventListener('mousemove', updateMouseCoordinates)
+  
+  if (currentTheme.value === 'y2k') {
+    setTimeout(() => {
+      initCanvas()
+    }, 500)
+  }
+})
+
+const currentTheme = ref(localStorage.getItem('artfolio_theme') || 'y2k')
+
+const toggleTheme = () => {
+  currentTheme.value = currentTheme.value === 'y2k' ? 'gothic' : 'y2k'
+  localStorage.setItem('artfolio_theme', currentTheme.value)
+  if (currentTheme.value === 'y2k') {
+    setTimeout(() => {
+      initCanvas()
+    }, 100)
+  }
+}
+
+watch(currentTheme, (newTheme) => {
+  document.body.className = `theme-${newTheme}`
+}, { immediate: true })
+
+onUnmounted(() => {
+  document.body.className = ''
 })
 </script>
 
 <template>
-  <div class="artfolio-app">
+  <div v-if="currentTheme === 'y2k'" class="desktop-wrapper classic-cursor">
+    <!-- Gothic Mode Shortcut on Desktop -->
+    <div class="desktop-icon gothic-switch-shortcut" @click="toggleTheme">
+      <div class="shortcut-icon-wrapper">🏰</div>
+      <div class="shortcut-label-wrapper">Gothic Mode.lnk</div>
+    </div>
+
+    <!-- Halftone Yellow Starburst Decoration in Background -->
+    <div class="starburst-bg"></div>
+
+    <!-- Cyber Stars -->
+    <svg 
+      v-for="star in cyberStars" 
+      :key="star.id" 
+      class="cyber-star" 
+      viewBox="0 0 24 24" 
+      :style="{ 
+        top: star.y + 'px', 
+        left: star.x + 'px', 
+        width: star.size + 'px', 
+        height: star.size + 'px', 
+        fill: star.color,
+        animationDuration: star.duration
+      }"
+    >
+      <path d="M12 0l3 9 9 3-9 3-3 9-3-9-9-3 9-3z"/>
+    </svg>
+
+    <!-- Draggable Vinyl Stickers -->
+    <div 
+      v-for="sticker in stickers" 
+      :key="sticker.id" 
+      class="y2k-sticker"
+      :class="sticker.colorClass"
+      :style="{ 
+        top: sticker.y + 'px', 
+        left: sticker.x + 'px', 
+        transform: `rotate(${sticker.rotation}deg)` 
+      }"
+      @mousedown="startDrag($event, 'sticker', sticker.id)"
+      @touchstart="startDrag($event, 'sticker', sticker.id)"
+    >
+      {{ sticker.text }}
+    </div>
+
+    <!-- WINDOW 1: Top-Left Title WordArt Window (Draggable) -->
+    <div 
+      class="win95-window purple-border logo-window"
+      :style="{ top: positions.wordart.y + 'px', left: positions.wordart.x + 'px' }"
+    >
+      <div class="win95-title-bar purple-title" @mousedown="startDrag($event, 'window', 'wordart')" @touchstart="startDrag($event, 'window', 'wordart')">
+        <div class="win95-title-text">✨ logo.gif</div>
+        <div class="win95-title-bar-controls" @mousedown.stop>
+          <button class="win95-btn">_</button>
+          <button class="win95-btn">X</button>
+        </div>
+      </div>
+      <div class="logo-text-wrapper">
+        <h1 class="logo-wordart-title">Esouth</h1>
+      </div>
+    </div>
+
+    <!-- WINDOW 2: Top-Right Smiley Window (Draggable) -->
+    <div 
+      class="win95-window purple-border smiley-window"
+      :style="{ top: positions.smiley.y + 'px', left: positions.smiley.x + 'px' }"
+    >
+      <div class="win95-title-bar purple-title" @mousedown="startDrag($event, 'window', 'smiley')" @touchstart="startDrag($event, 'window', 'smiley')">
+        <div class="win95-title-text">🙂 smiley.ico</div>
+        <div class="win95-title-bar-controls" @mousedown.stop>
+          <button class="win95-btn">_</button>
+          <button class="win95-btn">X</button>
+        </div>
+      </div>
+      <div class="smiley-box">
+        <svg viewBox="0 0 100 100" class="pixel-smiley">
+          <!-- Yellow Circle -->
+          <circle cx="50" cy="50" r="45" fill="#ffe600" stroke="#000000" stroke-width="4" />
+          <!-- Left Eye outer -->
+          <circle cx="35" cy="40" r="8" fill="#ffffff" stroke="#000000" stroke-width="3" />
+          <!-- Left Pupil -->
+          <circle :cx="35 + eyeOffset.x" :cy="40 + eyeOffset.y" r="4" fill="#000000" />
+          <!-- Right Eye outer -->
+          <circle cx="65" cy="40" r="8" fill="#ffffff" stroke="#000000" stroke-width="3" />
+          <!-- Right Pupil -->
+          <circle :cx="65 + eyeOffset.x" :cy="40 + eyeOffset.y" r="4" fill="#000000" />
+          <!-- Smile -->
+          <path d="M 30 62 Q 50 82 70 62" fill="none" stroke="#000000" stroke-width="5" stroke-linecap="round" />
+        </svg>
+      </div>
+    </div>
+
+    <!-- WINDOW 3: Bottom-Left Warning Window (Draggable) -->
+    <div 
+      class="win95-window purple-border warning-window"
+      :style="{ top: positions.warning.y + 'px', left: positions.warning.x + 'px' }"
+    >
+      <div class="win95-title-bar purple-title" @mousedown="startDrag($event, 'window', 'warning')" @touchstart="startDrag($event, 'window', 'warning')">
+        <div class="win95-title-text">⚠️ warning.sys</div>
+        <div class="win95-title-bar-controls" @mousedown.stop>
+          <button class="win95-btn">X</button>
+        </div>
+      </div>
+      <div class="warning-box clickable" @click="showWarningPopup = true">
+        <div class="warning-pixel-icon">⚠️</div>
+        <div class="warning-message">HAZARD: retro vibes detected! Click here to scan.</div>
+      </div>
+    </div>
+
+    <!-- WINDOW 4: Bottom-Right Year Window (Draggable) -->
+    <div 
+      class="win95-window purple-border year-window"
+      :style="{ top: positions.year.y + 'px', left: positions.year.x + 'px' }"
+    >
+      <div class="win95-title-bar purple-title" @mousedown="startDrag($event, 'window', 'year')" @touchstart="startDrag($event, 'window', 'year')">
+        <div class="win95-title-text">📅 date.exe</div>
+        <div class="win95-title-bar-controls" @mousedown.stop>
+          <button class="win95-btn">X</button>
+        </div>
+      </div>
+      <div class="year-content">
+        <div class="year-digits">2025</div>
+      </div>
+    </div>
+
+    <!-- WELCOME DIALOG (Classic Mac OS style, Draggable) -->
+    <div 
+      v-if="showWelcome" 
+      class="win95-window welcome-dialog"
+      :style="{ top: positions.welcome.y + 'px', left: positions.welcome.x + 'px' }"
+    >
+      <div class="win95-title-bar" @mousedown="startDrag($event, 'window', 'welcome')" @touchstart="startDrag($event, 'window', 'welcome')">
+        <div class="win95-title-text">💾 System Message</div>
+        <div class="win95-title-bar-controls" @mousedown.stop>
+          <button class="win95-btn" @click="showWelcome = false">X</button>
+        </div>
+      </div>
+      <div class="welcome-body win95-window-content">
+        <div class="welcome-header">
+          <span class="welcome-alert-icon">🖳</span>
+          <div class="welcome-title">Welcome to ArtFolio v1.0!</div>
+        </div>
+        <p class="welcome-text">
+          Estás ingresando al archivo visual retro de Esouth. Puedes explorar la galería de arte en el monitor CRT, dibujar en la pantalla e interactuar con los elementos del escritorio.
+        </p>
+        <div class="welcome-buttons">
+          <button class="win95-btn welcome-ok" @click="showWelcome = false">OK</button>
+          <button class="win95-btn welcome-cancel" @click="showWelcome = false">Cancelar</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- EXTRA WARNING POPUP (CHAOTIC Y2K FUN) -->
+    <div 
+      v-if="showWarningPopup" 
+      class="win95-window warning-popup"
+      :style="{ top: positions.warningPopup.y + 'px', left: positions.warningPopup.x + 'px' }"
+    >
+      <div class="win95-title-bar" @mousedown="startDrag($event, 'window', 'warningPopup')" @touchstart="startDrag($event, 'window', 'warningPopup')">
+        <div class="win95-title-text">⚠️ High Aesthetic Warning</div>
+        <div class="win95-title-bar-controls" @mousedown.stop>
+          <button class="win95-btn" @click="showWarningPopup = false">X</button>
+        </div>
+      </div>
+      <div class="welcome-body win95-window-content">
+        <p class="warning-popup-msg">
+          Se ha superado el límite de nostalgia recomendado para tu navegador. ¿Deseas continuar?
+        </p>
+        <div class="welcome-buttons">
+          <button class="win95-btn welcome-ok" @click="showWarningPopup = false">¡Sí!</button>
+          <button class="win95-btn welcome-ok" @click="showWarningPopup = false">Obvio</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- MAIN CENTER CRT MONITOR -->
+    <div class="crt-monitor-container">
+      <div class="crt-monitor win95-outset">
+        <div class="crt-bezel">
+          <!-- Glass Screen -->
+          <div class="crt-screen" :class="{ 'power-off': !monitorPower }">
+            
+            <div v-if="monitorPower" class="desktop-screen">
+              
+              <!-- OS Navigation Header -->
+              <div class="sys-bar">
+                <div class="sys-title">💻 ArtFolio Explorer v1.0</div>
+                <div class="sys-clock">{{ clockTime }}</div>
+              </div>
+
+              <!-- Desktop body containing Sidebar and MS Paint canvas -->
+              <div class="desktop-body">
+                
+                <!-- Sidebar File Manager (Collections & Artworks list) -->
+                <div class="desktop-sidebar win95-inset">
+                  <div class="sidebar-section">
+                    <div class="sidebar-header">📂 Colecciones</div>
+                    <div class="sidebar-list">
+                      <div 
+                        class="list-item clickable" 
+                        :class="{ active: activeCollectionId === null }" 
+                        @click="setCollection(null)"
+                      >
+                        📁 Ver Todas.col
+                      </div>
+                      <div 
+                        v-for="col in collections" 
+                        :key="col.id" 
+                        class="list-item clickable"
+                        :class="{ active: activeCollectionId === col.id }"
+                        @click="setCollection(col.id)"
+                      >
+                        📁 {{ col.nombre.substring(0, 16) }}.col
+                      </div>
+                    </div>
+                  </div>
+                  
+                  <div class="sidebar-divider"></div>
+
+                  <div class="sidebar-section files-section">
+                    <div class="sidebar-header">🖼️ Obras ({{ filteredArtworks.length }})</div>
+                    
+                    <!-- Search inside files -->
+                    <div class="sidebar-search">
+                      <input 
+                        type="text" 
+                        v-model="searchQuery" 
+                        placeholder="Buscar..." 
+                        class="win95-inset search-textbox"
+                      />
+                    </div>
+                    
+                    <div class="sidebar-list scrollable-files">
+                      <div v-if="loading" class="sidebar-loader">
+                        Cargando...
+                      </div>
+                      <div v-else-if="filteredArtworks.length === 0" class="sidebar-empty">
+                        Sin archivos
+                      </div>
+                      <div 
+                        v-else
+                        v-for="art in filteredArtworks" 
+                        :key="art.id" 
+                        class="list-item file-item clickable"
+                        :class="{ active: selectedArtwork?.id === art.id }"
+                        @click="selectArtwork(art)"
+                      >
+                        📄 {{ art.titulo.substring(0, 18) }}.bmp
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Main Paint Canvas Workspace -->
+                <div class="desktop-workspace">
+                  <div class="win95-window paint-app win95-outset">
+                    <div class="win95-title-bar">
+                      <div class="win95-title-text">🎨 {{ selectedArtwork ? selectedArtwork.titulo + '.bmp' : 'untitled' }} - Paint</div>
+                      <div class="win95-title-bar-controls">
+                        <button class="win95-btn">_</button>
+                        <button class="win95-btn" @click="clearPaintArea">X</button>
+                      </div>
+                    </div>
+                    
+                    <!-- MS Paint menus -->
+                    <div class="paint-menu">
+                      <span>Archivo</span>
+                      <span>Edición</span>
+                      <span>Ver</span>
+                      <span>Imagen</span>
+                      <span>Colores</span>
+                      <span class="active-artwork-status" v-if="selectedArtwork">
+                        [{{ selectedArtwork.estado }}]
+                      </span>
+                    </div>
+
+                    <!-- Paint Workspace: Tool rack and Drawing canvas -->
+                    <div class="paint-body">
+                      <!-- Paint tools rack -->
+                      <div class="paint-toolbar win95-outset">
+                        <button 
+                          v-for="tool in ['pencil', 'brush', 'eraser']" 
+                          :key="tool" 
+                          class="win95-btn tool-btn" 
+                          :class="{ active: activeTool === tool }" 
+                          @click="activeTool = tool"
+                          :title="tool.toUpperCase()"
+                        >
+                          <span v-if="tool === 'pencil'">✏️</span>
+                          <span v-else-if="tool === 'brush'">🖌️</span>
+                          <span v-else-if="tool === 'eraser'">🧽</span>
+                        </button>
+                        
+                        <div class="brush-size-select">
+                          <label>Size</label>
+                          <select v-model="brushSize" class="win95-inset size-select">
+                            <option :value="1">1px</option>
+                            <option :value="2">2px</option>
+                            <option :value="4">4px</option>
+                            <option :value="8">8px</option>
+                            <option :value="12">12px</option>
+                          </select>
+                        </div>
+                      </div>
+
+                      <!-- Canvas viewport -->
+                      <div class="paint-canvas-wrapper win95-inset">
+                        <canvas 
+                          ref="canvasRef" 
+                          class="paint-canvas"
+                          @mousedown="startDrawing" 
+                          @mousemove="draw" 
+                          @mouseup="stopDrawing" 
+                          @mouseleave="stopDrawing"
+                          @touchstart="startDrawing"
+                          @touchmove="draw"
+                          @touchend="stopDrawing"
+                        ></canvas>
+                      </div>
+                    </div>
+
+                    <!-- Paint colors palette at bottom -->
+                    <div class="paint-palette win95-outset">
+                      <div class="current-color win95-inset" :style="{ backgroundColor: brushColor }"></div>
+                      <div class="palette-colors win95-inset">
+                        <div 
+                          v-for="color in [
+                            '#000000', '#ffffff', '#808080', '#c0c0c0', 
+                            '#ff0000', '#ffff00', '#00ff00', '#00ffff', 
+                            '#0000ff', '#ff00ff', '#800080', '#008080',
+                            '#ff00aa', '#ffe600', '#0c35fc', '#800020'
+                          ]" 
+                          :key="color" 
+                          class="palette-color-box clickable" 
+                          :style="{ backgroundColor: color }" 
+                          @click="brushColor = color"
+                        ></div>
+                      </div>
+                      <button class="win95-btn clear-btn" @click="clearPaintArea">Clear</button>
+                    </div>
+                  </div>
+                </div>
+
+              </div>
+
+              <!-- Desktop Taskbar -->
+              <div class="desktop-taskbar win95-outset">
+                <div class="start-btn-container">
+                  <button class="win95-btn start-btn" :class="{ active: showStartMenu }" @click="toggleStartMenu">
+                    <span class="start-icon">🏁</span> Start
+                  </button>
+                  
+                  <!-- Start Menu Popup -->
+                  <div v-if="showStartMenu" class="win95-window start-menu">
+                    <div class="start-menu-sidebar">
+                      <div class="sidebar-text">ArtFolio 95</div>
+                    </div>
+                    <div class="start-menu-items">
+                      <router-link to="/login" class="start-menu-item">
+                        <span class="item-icon">🔒</span> Acceso Artista (Admin)
+                      </router-link>
+                      <div class="start-menu-separator"></div>
+                      <a href="#" class="start-menu-item" @click.prevent="clearPaintArea(); showStartMenu = false">
+                        <span class="item-icon">🗑️</span> Nuevo Lienzo
+                      </a>
+                      <a href="https://github.com" target="_blank" class="start-menu-item">
+                        <span class="item-icon">🌐</span> Netscape Navigator
+                      </a>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="active-windows-list">
+                  <button class="win95-btn tray-theme-btn" @click="toggleTheme">🏰 Gothic Mode</button>
+                  <div class="task-tab win95-inset">🎨 untitled - Paint</div>
+                </div>
+              </div>
+
+            </div>
+          </div>
+        </div>
+
+        <!-- Bezel Controls -->
+        <div class="crt-controls">
+          <div class="brand-text">A E S T H E T I C</div>
+          <div class="bezel-dials">
+            <div class="dial"></div>
+            <div class="dial"></div>
+            <div class="dial"></div>
+          </div>
+          <div class="power-btn-group">
+            <div class="power-led" :class="{ 'led-on': monitorPower }"></div>
+            <button class="power-switch win95-btn" @click="toggleMonitorPower"></button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- WINDOW 5: Floating Draggable TextEdit Window (Art details) -->
+    <div 
+      v-if="selectedArtwork"
+      class="win95-window purple-border textedit-window"
+      :style="{ top: positions.textedit.y + 'px', left: positions.textedit.x + 'px' }"
+    >
+      <div class="win95-title-bar purple-title" @mousedown="startDrag($event, 'window', 'textedit')" @touchstart="startDrag($event, 'window', 'textedit')">
+        <div class="win95-title-text">📝 Info: {{ selectedArtwork.titulo }}.txt</div>
+        <div class="win95-title-bar-controls" @mousedown.stop>
+          <button class="win95-btn" @click="selectedArtwork = null">X</button>
+        </div>
+      </div>
+      <div class="textedit-body win95-window-content">
+        <div class="notepad-header">
+          File Edit Search Help
+        </div>
+        <textarea class="notepad-textarea win95-inset" readonly :value="`TITULO: ${selectedArtwork.titulo}
+TECNICA: ${selectedArtwork.tecnica}
+DIMENSIONES: ${selectedArtwork.dimensiones}
+AÑO: ${selectedArtwork.ano}
+ESTADO: ${selectedArtwork.estado}
+PRECIO: ${selectedArtwork.precio ? '$' + parseFloat(selectedArtwork.precio).toLocaleString('en-US', { minimumFractionDigits: 2 }) + ' USD' : 'N/A'}
+
+DESCRIPCION:
+Obra visual catalogada en el portafolio ArtFolio.`"></textarea>
+        
+        <div class="notepad-actions" v-if="selectedArtwork.estado === 'Disponible'">
+          <a :href="getWhatsAppLink(selectedArtwork)" target="_blank" class="win95-btn acquire-btn">
+            💬 Consultar Adquisición
+          </a>
+        </div>
+      </div>
+    </div>
+
+    <!-- Floating Marquee Text at very bottom -->
+    <div class="desktop-marquee win95-outset">
+      <marquee scrollamount="4">
+        ☄️ ARTFOLIO v1.0 — BIENVENIDO AL FUTURO ☄️ EXPLORA EL CATÁLOGO Y DIBUJA DIRECTAMENTE SOBRE LAS OBRAS DE ARTE ☄️ ESTILO RETRO WEBCORE Y2K ☄️
+      </marquee>
+    </div>
+  </div>
+  <div v-else class="artfolio-app">
     <!-- Cybersigil Background Grid & Details -->
     <div class="cybersigil-grid"></div>
     
@@ -132,6 +967,7 @@ onMounted(() => {
 
     <!-- Header Section -->
     <header class="header">
+      <button @click="toggleTheme" class="admin-portal-link y2k-toggle-link" style="right: auto; left: 20px;">⚡ Switch to Y2K Desktop</button>
       <div class="sigil-icon-left"></div>
       <div class="title-container">
         <h1 class="logo-text">ArtFolio</h1>
@@ -141,7 +977,7 @@ onMounted(() => {
       
       <!-- Artist Portal Link -->
       <router-link to="/login" class="admin-portal-link">
-        <span class="lock-icon">🔒</span> Acceso Artista
+        <span class="lock-icon">🔑</span> Acceso Artista
       </router-link>
     </header>
 
@@ -181,7 +1017,7 @@ onMounted(() => {
       </div>
 
       <div v-else-if="filteredArtworks.length === 0" class="empty-state">
-        <p>No se encontraron obras registradas en esta selección.</p>
+        <p>No se encontraron obras registradas en esta selecci├│n.</p>
       </div>
 
       <!-- Masonry Layout -->
@@ -240,12 +1076,797 @@ onMounted(() => {
           <circle cx="500" cy="40" r="4" fill="#c5a059" />
         </svg>
       </div>
-      <p class="copyright">© 2026 ArtFolio. Diseñado en el claroscuro del arte analógico y digital.</p>
+      <p class="copyright">┬⌐ 2026 ArtFolio. Dise├▒ado en el claroscuro del arte anal├│gico y digital.</p>
     </footer>
   </div>
 </template>
 
 <style scoped>
+/* Desktop Layout Grid */
+.desktop-wrapper {
+  position: relative;
+  width: 100vw;
+  min-height: 100vh;
+  overflow: hidden;
+  box-sizing: border-box;
+  padding: 20px;
+}
+
+/* Background starburst clip path styling */
+.starburst-bg {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 800px;
+  height: 800px;
+  background-color: var(--y2k-yellow);
+  clip-path: polygon(
+    50% 0%, 54% 33%, 80% 12%, 67% 43%, 100% 50%, 67% 57%, 80% 88%, 54% 67%, 
+    50% 100%, 46% 67%, 20% 88%, 33% 57%, 0% 50%, 33% 43%, 20% 12%, 46% 33%
+  );
+  filter: drop-shadow(0 0 40px rgba(255, 230, 0, 0.5));
+  z-index: 1;
+  pointer-events: none;
+}
+
+/* Draggable Windows custom styling sizes */
+.logo-window {
+  width: 250px;
+  z-index: 90;
+}
+
+.logo-text-wrapper {
+  padding: 15px;
+  text-align: center;
+  background-color: #000000;
+  border: 2px inset var(--win-grey);
+}
+
+.logo-wordart-title {
+  font-family: 'Cinzel', serif;
+  font-size: 2.8rem;
+  font-weight: bold;
+  font-style: italic;
+  margin: 0;
+  background: linear-gradient(135deg, #0c35fc, #ff00ff, #ffff00);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  filter: drop-shadow(2px 2px 0px #ffffff) drop-shadow(0 0 10px rgba(255, 0, 255, 0.8));
+  line-height: 1.1;
+  letter-spacing: -1px;
+}
+
+.smiley-window {
+  width: 140px;
+  z-index: 90;
+}
+
+.smiley-box {
+  padding: 10px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  background-color: #ffffff;
+}
+
+.pixel-smiley {
+  width: 90px;
+  height: 90px;
+}
+
+.warning-window {
+  width: 280px;
+  z-index: 90;
+}
+
+.warning-box {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px;
+  background-color: #ffffff;
+}
+
+.warning-pixel-icon {
+  font-size: 2.2rem;
+}
+
+.warning-message {
+  font-size: 11px;
+  font-family: 'Tahoma', sans-serif;
+  color: #000000;
+}
+
+.year-window {
+  width: 160px;
+  z-index: 90;
+}
+
+.year-content {
+  padding: 10px;
+  background-color: #000000;
+  text-align: center;
+  border: 2px inset var(--win-grey);
+}
+
+.year-digits {
+  font-family: 'Cinzel', serif;
+  font-size: 3.2rem;
+  font-weight: 900;
+  color: var(--y2k-cyan);
+  text-shadow: 2px 2px 0px var(--y2k-magenta), 0 0 12px var(--y2k-cyan);
+  line-height: 1;
+}
+
+/* Welcome Dialog OS Styling */
+.welcome-dialog {
+  width: 420px;
+  z-index: 100;
+}
+
+.welcome-header {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  margin-bottom: 12px;
+}
+
+.welcome-alert-icon {
+  font-size: 2.5rem;
+}
+
+.welcome-title {
+  font-size: 14px;
+  font-weight: bold;
+}
+
+.welcome-text {
+  font-size: 12px;
+  line-height: 1.4;
+  margin-bottom: 15px;
+}
+
+.welcome-buttons {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.welcome-ok, .welcome-cancel {
+  padding: 4px 15px;
+  font-size: 12px;
+  min-width: 75px;
+}
+
+.warning-popup {
+  width: 320px;
+  z-index: 110;
+}
+
+.warning-popup-msg {
+  font-size: 12px;
+  line-height: 1.3;
+  margin-bottom: 15px;
+}
+
+/* CRT Monitor styles */
+.crt-monitor-container {
+  display: flex;
+  justify-content: center;
+  width: 100%;
+  position: relative;
+  z-index: 10;
+  pointer-events: none; /* Let background elements remain clickable except monitor itself */
+}
+
+.crt-monitor {
+  pointer-events: auto; /* Re-enable pointer events for the monitor */
+  width: 780px;
+  background-color: #dfdfdf;
+  border-top: 3px solid #ffffff;
+  border-left: 3px solid #ffffff;
+  border-right: 3px solid #777777;
+  border-bottom: 3px solid #777777;
+  border-radius: 8px;
+  padding: 12px;
+  box-shadow: 0 10px 40px rgba(0,0,0,0.6);
+  margin-top: 100px;
+  margin-bottom: 50px;
+  box-sizing: border-box;
+}
+
+.crt-bezel {
+  background-color: #c0c0c0;
+  border-top: 3px solid #777777;
+  border-left: 3px solid #777777;
+  border-right: 3px solid #ffffff;
+  border-bottom: 3px solid #ffffff;
+  padding: 10px;
+  border-radius: 4px;
+}
+
+.crt-screen {
+  background-color: #000000;
+  border-radius: 12px;
+  border: 10px solid #1a1a1a;
+  position: relative;
+  overflow: hidden;
+  box-shadow: inset 0 0 30px #000000;
+  aspect-ratio: 4 / 3;
+}
+
+/* CRT Scanline phosphor glow overlay */
+.crt-screen::after {
+  content: " ";
+  display: block;
+  position: absolute;
+  top: 0; left: 0; bottom: 0; right: 0;
+  background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.2) 50%), 
+              linear-gradient(90deg, rgba(255, 0, 0, 0.05), rgba(0, 255, 0, 0.02), rgba(0, 0, 255, 0.05));
+  background-size: 100% 3px, 6px 100%;
+  z-index: 99;
+  pointer-events: none;
+  opacity: 0.95;
+}
+
+/* Monitor power state */
+.crt-screen.power-off {
+  background-color: #0d0e15 !important;
+}
+.crt-screen.power-off::after {
+  display: none;
+}
+.crt-screen.power-off .desktop-screen {
+  display: none;
+}
+
+/* OS UI Inside Monitor */
+.desktop-screen {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background-color: #008080; /* Classic Win95 Teal desktop */
+  font-family: 'Tahoma', 'MS Sans Serif', sans-serif;
+  font-size: 11px;
+}
+
+.sys-bar {
+  background-color: #000080;
+  color: #ffffff;
+  display: flex;
+  justify-content: space-between;
+  padding: 2px 6px;
+  font-weight: bold;
+}
+
+.desktop-body {
+  flex-grow: 1;
+  display: flex;
+  overflow: hidden;
+  padding: 6px;
+  gap: 6px;
+}
+
+/* Sidebar structure inside monitor */
+.desktop-sidebar {
+  width: 160px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 4px;
+  box-sizing: border-box;
+}
+
+.sidebar-section {
+  display: flex;
+  flex-direction: column;
+}
+
+.files-section {
+  flex-grow: 1;
+  overflow: hidden;
+}
+
+.sidebar-header {
+  background-color: #e0e0e0;
+  padding: 3px 6px;
+  font-weight: bold;
+  border-bottom: 1px solid #808080;
+  margin-bottom: 4px;
+}
+
+.sidebar-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 100px;
+  overflow-y: auto;
+}
+
+.scrollable-files {
+  flex-grow: 1;
+  max-height: none !important;
+  overflow-y: auto;
+}
+
+.sidebar-search {
+  padding: 3px 0;
+}
+
+.search-textbox {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 2px 4px;
+  font-size: 10px;
+  outline: none;
+}
+
+.sidebar-divider {
+  height: 2px;
+  background-color: #808080;
+  margin: 6px 0;
+}
+
+.list-item {
+  padding: 3px 6px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  user-select: none;
+}
+
+.list-item.active {
+  background-color: #000080;
+  color: #ffffff;
+}
+
+.file-item {
+  padding-left: 12px;
+}
+
+.sidebar-loader, .sidebar-empty {
+  padding: 6px;
+  color: #555555;
+  font-style: italic;
+}
+
+/* Paint Workspace styling */
+.desktop-workspace {
+  flex-grow: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.paint-app {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.paint-menu {
+  background-color: var(--win-grey);
+  border-bottom: 1px solid var(--win-border-dark);
+  padding: 3px 8px;
+  display: flex;
+  gap: 12px;
+  user-select: none;
+  font-weight: normal;
+}
+
+.paint-menu span {
+  cursor: pointer;
+}
+
+.active-artwork-status {
+  margin-left: auto;
+  color: #800000;
+  font-weight: bold;
+}
+
+.paint-body {
+  flex-grow: 1;
+  display: flex;
+  padding: 4px;
+  gap: 4px;
+  overflow: hidden;
+}
+
+.paint-toolbar {
+  width: 48px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 4px;
+  align-items: center;
+}
+
+.tool-btn {
+  width: 32px;
+  height: 32px;
+  font-size: 16px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.tool-btn.active {
+  background-color: #e0e0e0;
+  border-top: 1.5px solid var(--win-border-dark);
+  border-left: 1.5px solid var(--win-border-dark);
+  border-right: 1.5px solid var(--win-border-light);
+  border-bottom: 1.5px solid var(--win-border-light);
+  box-shadow: none;
+  padding: 1px 0 0 1px;
+}
+
+.brush-size-select {
+  margin-top: 10px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  font-size: 9px;
+  gap: 2px;
+}
+
+.size-select {
+  font-size: 9px;
+  background-color: #ffffff;
+  padding: 1px;
+  outline: none;
+}
+
+.paint-canvas-wrapper {
+  flex-grow: 1;
+  background-color: #808080;
+  padding: 3px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  overflow: hidden;
+}
+
+.paint-canvas {
+  background-color: #ffffff;
+  max-width: 100%;
+  max-height: 100%;
+  display: block;
+  cursor: crosshair;
+}
+
+.paint-palette {
+  display: flex;
+  align-items: center;
+  padding: 4px 8px;
+  gap: 8px;
+}
+
+.current-color {
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+}
+
+.palette-colors {
+  display: grid;
+  grid-template-columns: repeat(8, 1fr);
+  gap: 2px;
+  padding: 2px;
+  background-color: #ffffff;
+  flex-grow: 1;
+}
+
+.palette-color-box {
+  width: 12px;
+  height: 12px;
+  border: 1px solid #777777;
+}
+
+.clear-btn {
+  padding: 2px 10px;
+  font-size: 11px;
+}
+
+/* Taskbar styling */
+.desktop-taskbar {
+  height: 28px;
+  display: flex;
+  align-items: center;
+  padding: 2px 4px;
+  gap: 6px;
+  box-sizing: border-box;
+}
+
+.start-btn-container {
+  position: relative;
+}
+
+.start-btn {
+  font-weight: bold;
+  padding: 2px 10px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.start-btn.active {
+  border-top: 1.5px solid var(--win-border-dark);
+  border-left: 1.5px solid var(--win-border-dark);
+  border-right: 1.5px solid var(--win-border-light);
+  border-bottom: 1.5px solid var(--win-border-light);
+  box-shadow: none;
+  padding: 3px 9px 1px 11px;
+}
+
+.start-icon {
+  font-size: 12px;
+}
+
+.start-menu {
+  position: absolute;
+  bottom: 26px;
+  left: 0;
+  width: 180px;
+  z-index: 999;
+  display: flex;
+}
+
+.start-menu-sidebar {
+  background-color: #000080;
+  width: 24px;
+  display: flex;
+  align-items: flex-end;
+  padding: 6px;
+}
+
+.sidebar-text {
+  color: #ffffff;
+  font-weight: bold;
+  transform: rotate(-90deg);
+  transform-origin: 0 0;
+  white-space: nowrap;
+  font-size: 14px;
+  margin-bottom: 15px;
+}
+
+.start-menu-items {
+  flex-grow: 1;
+  background-color: var(--win-grey);
+  display: flex;
+  flex-direction: column;
+  padding: 2px;
+}
+
+.start-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  color: #000000;
+  text-decoration: none;
+  font-size: 11px;
+}
+
+.start-menu-item:hover {
+  background-color: #000080;
+  color: #ffffff;
+}
+
+.start-menu-separator {
+  height: 1px;
+  background-color: #808080;
+  margin: 3px 0;
+}
+
+.active-windows-list {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.task-tab {
+  background-color: #dfdfdf;
+  padding: 3px 12px;
+  font-weight: bold;
+  border-top: 1.5px solid var(--win-border-dark);
+  border-left: 1.5px solid var(--win-border-dark);
+  border-right: 1.5px solid var(--win-border-light);
+  border-bottom: 1.5px solid var(--win-border-light);
+}
+
+/* Monitor physical bezel dials and power button */
+.crt-controls {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 10px;
+  padding: 4px 10px;
+}
+
+.brand-text {
+  font-family: monospace;
+  font-size: 12px;
+  font-weight: bold;
+  letter-spacing: 4px;
+  color: #555555;
+}
+
+.bezel-dials {
+  display: flex;
+  gap: 8px;
+}
+
+.dial {
+  width: 10px;
+  height: 10px;
+  background-color: #888888;
+  border-radius: 50%;
+  border: 1px solid #555555;
+}
+
+.power-btn-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.power-led {
+  width: 6px;
+  height: 6px;
+  background-color: #4a1515;
+  border-radius: 50%;
+}
+
+.power-led.led-on {
+  background-color: #00ff00;
+  box-shadow: 0 0 6px #00ff00;
+}
+
+.power-switch {
+  width: 24px;
+  height: 16px;
+  background-color: #c0c0c0;
+}
+
+/* WINDOW 5: Floating Draggable TextEdit window styling */
+.textedit-window {
+  width: 320px;
+  z-index: 100;
+}
+
+.notepad-header {
+  font-size: 11px;
+  padding: 3px 6px;
+  border-bottom: 1px solid #808080;
+  background-color: var(--win-grey);
+  display: flex;
+  gap: 12px;
+  color: #000000;
+  user-select: none;
+}
+
+.notepad-textarea {
+  width: 100%;
+  height: 180px;
+  box-sizing: border-box;
+  resize: none;
+  font-family: 'Courier New', monospace;
+  font-size: 12px;
+  padding: 8px;
+  outline: none;
+  border: 2px inset var(--win-grey);
+  background-color: #ffffff;
+  color: #000000;
+}
+
+.notepad-actions {
+  margin-top: 8px;
+}
+
+.acquire-btn {
+  display: block;
+  text-align: center;
+  text-decoration: none;
+  padding: 6px 12px;
+  font-weight: bold;
+}
+
+/* Bottom banner marquee styling */
+.desktop-marquee {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  padding: 4px;
+  font-family: 'VT323', monospace;
+  font-size: 1.3rem;
+  z-index: 9999;
+}
+
+.clickable {
+  cursor: pointer;
+}
+
+/* Responsive fixes */
+@media (max-width: 820px) {
+  .starburst-bg {
+    width: 450px;
+    height: 450px;
+  }
+  .crt-monitor {
+    width: 100%;
+    margin-top: 160px;
+  }
+  .logo-window, .smiley-window, .warning-window, .year-window, .textedit-window {
+    position: static !important;
+    margin-bottom: 15px;
+    width: 100% !important;
+  }
+  .desktop-wrapper {
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+  }
+}
+
+/* Theme Switcher Styles */
+.gothic-switch-shortcut {
+  position: absolute;
+  top: 120px;
+  left: 20px;
+  text-align: center;
+  width: 80px;
+  cursor: pointer;
+  z-index: 90;
+  transition: transform 0.2s;
+}
+.gothic-switch-shortcut:hover {
+  transform: scale(1.05);
+}
+.gothic-switch-shortcut .shortcut-icon-wrapper {
+  font-size: 32px;
+  filter: drop-shadow(1px 1px 0px #000);
+}
+.gothic-switch-shortcut .shortcut-label-wrapper {
+  font-size: 11px;
+  color: #ffffff;
+  background-color: #000000;
+  padding: 2px 4px;
+  border: 1px dotted #ffffff;
+  margin-top: 4px;
+  font-family: 'MS Sans Serif', 'Tahoma', sans-serif;
+  word-break: break-all;
+}
+.tray-theme-btn {
+  font-size: 11px;
+  font-weight: bold;
+  margin-left: 10px;
+  background-color: var(--win-grey);
+  border: 2px outset #ffffff;
+  padding: 2px 6px;
+  cursor: pointer;
+  font-family: 'MS Sans Serif', 'Tahoma', sans-serif;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 22px;
+  vertical-align: middle;
+}
+.tray-theme-btn:active {
+  border-style: inset;
+}
+.y2k-toggle-link {
+  font-weight: bold;
+  border-color: #c5a059;
+  color: #c5a059;
+}
+.y2k-toggle-link:hover {
+  background: rgba(12, 53, 252, 0.2) !important;
+  border-color: #0c35fc !important;
+  color: #fff !important;
+}
+
 /* Scoped styles to isolate the components structure */
 .artfolio-app {
   min-height: 100vh;
