@@ -15,8 +15,14 @@ const token = ref(localStorage.getItem('artfolio_token'))
 const showModal = ref(false)
 const submitting = ref(false)
 const formError = ref('')
+const isEditing = ref(false)
+const editingArtworkId = ref(null)
 
-// New Artwork Form State
+// Image upload state
+const uploadingImage = ref(false)
+const uploadError = ref('')
+
+// New/Edit Artwork Form State
 const newArtwork = ref({
   titulo: '',
   tecnica: '',
@@ -26,6 +32,21 @@ const newArtwork = ref({
   imagen_url: '',
   estado: 'Disponible',
   coleccion_id: null
+})
+
+// Tab selection
+const activeTab = ref('artworks') // 'artworks' or 'collections'
+
+// Collection form modal state
+const showCollectionModal = ref(false)
+const submittingCollection = ref(false)
+const collectionFormError = ref('')
+const isEditingCollection = ref(false)
+const editingCollectionId = ref(null)
+
+const newCollection = ref({
+  nombre: '',
+  descripcion: ''
 })
 
 // Mock fallback data
@@ -51,7 +72,7 @@ const mockArtworks = [
     id: 102,
     titulo: "Estudio de las Sombras",
     tecnica: "Carboncillo sobre papel hecho a mano",
-    dimensiones: "40 x 30 cm",
+    dimensions: "40 x 30 cm",
     ano: 2023,
     precio: 350.00,
     imagen_url: "https://images.unsplash.com/photo-1579783928621-7a13d66a62d1?q=80&w=600&auto=format&fit=crop",
@@ -90,6 +111,41 @@ const fetchInventory = async () => {
     collections.value = mockCollections
   } finally {
     loading.value = false
+  }
+}
+
+// Upload file to backend
+const handleFileUpload = async (event) => {
+  const file = event.target.files[0]
+  if (!file) return
+
+  uploadingImage.value = true
+  uploadError.value = ''
+
+  const formData = new FormData()
+  formData.append('file', file)
+
+  try {
+    const response = await fetch(`${API_URL}/artworks/upload`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token.value}`
+      },
+      body: formData
+    })
+
+    if (!response.ok) {
+      const data = await response.json()
+      throw new Error(data.detail || 'Error al subir la imagen')
+    }
+
+    const data = await response.json()
+    newArtwork.value.imagen_url = data.imagen_url
+  } catch (err) {
+    console.error("Upload error:", err)
+    uploadError.value = err.message || 'Error al subir la imagen'
+  } finally {
+    uploadingImage.value = false
   }
 }
 
@@ -141,6 +197,196 @@ const handleAddArtwork = async () => {
   }
 }
 
+// Update artwork API call
+const handleEditArtwork = async () => {
+  submitting.value = true
+  formError.value = ''
+  
+  const payload = {
+    ...newArtwork.value,
+    precio: newArtwork.value.precio ? parseFloat(newArtwork.value.precio) : null,
+    coleccion_id: newArtwork.value.coleccion_id ? parseInt(newArtwork.value.coleccion_id) : null
+  }
+  
+  try {
+    const response = await fetch(`${API_URL}/artworks/${editingArtworkId.value}`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token.value}`
+      },
+      body: JSON.stringify(payload)
+    })
+    
+    const data = await response.json()
+    
+    if (!response.ok) {
+      const errDetail = Array.isArray(data.detail) ? data.detail[0].msg : data.detail
+      throw new Error(errDetail || 'Error al actualizar la obra')
+    }
+    
+    // Success: update reactive list
+    const index = artworks.value.findIndex(a => a.id === editingArtworkId.value)
+    if (index !== -1) {
+      artworks.value[index] = data
+    }
+    closeFormModal()
+  } catch (err) {
+    console.error("Update error, applying locally (mock mode):", err)
+    const index = artworks.value.findIndex(a => a.id === editingArtworkId.value)
+    if (index !== -1) {
+      artworks.value[index] = {
+        ...artworks.value[index],
+        ...payload
+      }
+    }
+    closeFormModal()
+  } finally {
+    submitting.value = false
+  }
+}
+
+const handleSubmit = async () => {
+  if (isEditing.value) {
+    await handleEditArtwork()
+  } else {
+    await handleAddArtwork()
+  }
+}
+
+// Collection CRUD functions
+const openCollectionModal = (collection = null) => {
+  showCollectionModal.value = true
+  collectionFormError.value = ''
+  if (collection) {
+    isEditingCollection.value = true
+    editingCollectionId.value = collection.id
+    newCollection.value = {
+      nombre: collection.nombre,
+      descripcion: collection.descripcion || ''
+    }
+  } else {
+    isEditingCollection.value = false
+    editingCollectionId.value = null
+    newCollection.value = {
+      nombre: '',
+      descripcion: ''
+    }
+  }
+}
+
+const closeCollectionModal = () => {
+  showCollectionModal.value = false
+  isEditingCollection.value = false
+  editingCollectionId.value = null
+}
+
+const handleAddCollection = async () => {
+  submittingCollection.value = true
+  collectionFormError.value = ''
+  try {
+    const response = await fetch(`${API_URL}/collections/`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token.value}`
+      },
+      body: JSON.stringify(newCollection.value)
+    })
+    const data = await response.json()
+    if (!response.ok) {
+      throw new Error(data.detail || 'Error al guardar la colección')
+    }
+    collections.value.push(data)
+    closeCollectionModal()
+  } catch (err) {
+    console.error("Save collection error, falling back to mock:", err)
+    const mockCreated = {
+      ...newCollection.value,
+      id: Math.floor(Math.random() * 1000) + 50,
+      created_at: new Date().toISOString()
+    }
+    collections.value.push(mockCreated)
+    closeCollectionModal()
+  } finally {
+    submittingCollection.value = false
+  }
+}
+
+const handleEditCollection = async () => {
+  submittingCollection.value = true
+  collectionFormError.value = ''
+  try {
+    const response = await fetch(`${API_URL}/collections/${editingCollectionId.value}`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token.value}`
+      },
+      body: JSON.stringify(newCollection.value)
+    })
+    const data = await response.json()
+    if (!response.ok) {
+      throw new Error(data.detail || 'Error al actualizar la colección')
+    }
+    const index = collections.value.findIndex(c => c.id === editingCollectionId.value)
+    if (index !== -1) {
+      collections.value[index] = data
+    }
+    closeCollectionModal()
+  } catch (err) {
+    console.error("Update collection error, applying locally (mock mode):", err)
+    const index = collections.value.findIndex(c => c.id === editingCollectionId.value)
+    if (index !== -1) {
+      collections.value[index] = {
+        ...collections.value[index],
+        ...newCollection.value
+      }
+    }
+    closeCollectionModal()
+  } finally {
+    submittingCollection.value = false
+  }
+}
+
+const handleSubmitCollection = async () => {
+  if (isEditingCollection.value) {
+    await handleEditCollection()
+  } else {
+    await handleAddCollection()
+  }
+}
+
+const handleDeleteCollection = async (id) => {
+  if (!confirm('¿Seguro que deseas eliminar esta colección? Las obras asociadas quedarán sin colección.')) return
+  try {
+    const response = await fetch(`${API_URL}/collections/${id}`, {
+      method: 'DELETE',
+      headers: {
+        'Authorization': `Bearer ${token.value}`
+      }
+    })
+    if (!response.ok) {
+      const data = await response.json()
+      throw new Error(data.detail || 'Error al eliminar la colección')
+    }
+    collections.value = collections.value.filter(c => c.id !== id)
+    artworks.value.forEach(artwork => {
+      if (artwork.coleccion_id === id) {
+        artwork.coleccion_id = null
+      }
+    })
+  } catch (err) {
+    console.error("Delete collection failed, applying locally (mock mode):", err)
+    collections.value = collections.value.filter(c => c.id !== id)
+    artworks.value.forEach(artwork => {
+      if (artwork.coleccion_id === id) {
+        artwork.coleccion_id = null
+      }
+    })
+  }
+}
+
 // Delete artwork API call
 const handleDeleteArtwork = async (id) => {
   if (!confirm('¿Seguro que deseas eliminar esta obra del inventario?')) return
@@ -167,23 +413,44 @@ const handleDeleteArtwork = async (id) => {
 }
 
 // Helpers
-const openFormModal = () => {
+const openFormModal = (artwork = null) => {
   showModal.value = true
   formError.value = ''
-  newArtwork.value = {
-    titulo: '',
-    tecnica: '',
-    dimensiones: '',
-    ano: new Date().getFullYear(),
-    precio: null,
-    imagen_url: '',
-    estado: 'Disponible',
-    coleccion_id: collections.value.length > 0 ? collections.value[0].id : null
+  uploadError.value = ''
+  
+  if (artwork) {
+    isEditing.value = true
+    editingArtworkId.value = artwork.id
+    newArtwork.value = {
+      titulo: artwork.titulo,
+      tecnica: artwork.tecnica,
+      dimensiones: artwork.dimensiones,
+      ano: artwork.ano,
+      precio: artwork.precio,
+      imagen_url: artwork.imagen_url,
+      estado: artwork.estado,
+      coleccion_id: artwork.coleccion_id
+    }
+  } else {
+    isEditing.value = false
+    editingArtworkId.value = null
+    newArtwork.value = {
+      titulo: '',
+      tecnica: '',
+      dimensiones: '',
+      ano: new Date().getFullYear(),
+      precio: null,
+      imagen_url: '',
+      estado: 'Disponible',
+      coleccion_id: collections.value.length > 0 ? collections.value[0].id : null
+    }
   }
 }
 
 const closeFormModal = () => {
   showModal.value = false
+  isEditing.value = false
+  editingArtworkId.value = null
 }
 
 const handleLogout = () => {
@@ -226,6 +493,16 @@ onMounted(() => {
         </div>
       </header>
 
+      <!-- Tabs Navigation -->
+      <nav class="admin-tabs">
+        <button class="tab-btn" :class="{ active: activeTab === 'artworks' }" @click="activeTab = 'artworks'">
+          Inventario de Obras
+        </button>
+        <button class="tab-btn" :class="{ active: activeTab === 'collections' }" @click="activeTab = 'collections'">
+          Gestión de Colecciones
+        </button>
+      </nav>
+
       <!-- Main Panel -->
       <main class="panel">
         <div v-if="loading" class="loader-container">
@@ -234,8 +511,8 @@ onMounted(() => {
         </div>
 
         <div v-else>
-          <!-- Table Panel -->
-          <div class="table-responsive">
+          <!-- Artwork Table Tab -->
+          <div v-if="activeTab === 'artworks'" class="table-responsive">
             <table class="inventory-table">
               <thead>
                 <tr>
@@ -277,7 +554,42 @@ onMounted(() => {
                     </span>
                   </td>
                   <td class="text-right">
+                    <button @click="openFormModal(artwork)" class="btn-edit" title="Editar obra" style="margin-right: 0.5rem;">
+                      Editar
+                    </button>
                     <button @click="handleDeleteArtwork(artwork.id)" class="btn-delete" title="Eliminar obra">
+                      Eliminar
+                    </button>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <!-- Collection Table Tab -->
+          <div v-else-if="activeTab === 'collections'" class="table-responsive">
+            <table class="inventory-table">
+              <thead>
+                <tr>
+                  <th>Nombre de la Colección</th>
+                  <th>Descripción</th>
+                  <th>Fecha de Creación</th>
+                  <th class="text-right">Acciones</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-if="collections.length === 0">
+                  <td colspan="4" class="empty-table">No hay colecciones registradas.</td>
+                </tr>
+                <tr v-for="col in collections" :key="col.id">
+                  <td class="td-title">{{ col.nombre }}</td>
+                  <td>{{ col.descripcion || 'Sin descripción' }}</td>
+                  <td>{{ new Date(col.created_at || new Date()).toLocaleDateString() }}</td>
+                  <td class="text-right">
+                    <button @click="openCollectionModal(col)" class="btn-edit" title="Editar colección" style="margin-right: 0.5rem;">
+                      Editar
+                    </button>
+                    <button @click="handleDeleteCollection(col.id)" class="btn-delete" title="Eliminar colección">
                       Eliminar
                     </button>
                   </td>
@@ -289,11 +601,11 @@ onMounted(() => {
       </main>
 
       <!-- Floating Action Button (FAB) -->
-      <button class="fab" @click="openFormModal" title="Agregar obra nueva">
+      <button class="fab" @click="activeTab === 'artworks' ? openFormModal() : openCollectionModal()" :title="activeTab === 'artworks' ? 'Agregar obra nueva' : 'Agregar colección nueva'">
         <span class="plus-icon">+</span>
       </button>
 
-      <!-- Create Artwork Modal -->
+      <!-- Create/Edit Artwork Modal -->
       <div v-if="showModal" class="modal-overlay" @click.self="closeFormModal">
         <div class="modal-card">
           <!-- Cybersigil Corner Details -->
@@ -303,11 +615,11 @@ onMounted(() => {
           <div class="modal-sigil bottom-right"></div>
           
           <header class="modal-header">
-            <h3>Registrar Nueva Obra</h3>
+            <h3>{{ isEditing ? 'Editar Obra' : 'Registrar Nueva Obra' }}</h3>
             <button @click="closeFormModal" class="btn-close-modal">✕</button>
           </header>
 
-          <form @submit.prevent="handleAddArtwork" class="modal-form">
+          <form @submit.prevent="handleSubmit" class="modal-form">
             <div v-if="formError" class="form-error-alert">{{ formError }}</div>
 
             <div class="form-row">
@@ -367,15 +679,66 @@ onMounted(() => {
             </div>
 
             <div class="form-group">
-              <label>URL de Imagen de la Obra *</label>
-              <input type="url" v-model="newArtwork.imagen_url" required placeholder="https://unsplash.com/..." class="modal-input" />
+              <label>Imagen de la Obra *</label>
+              <div class="upload-container">
+                <input type="file" @change="handleFileUpload" accept="image/*" class="file-input-hidden" id="file-upload" />
+                <label for="file-upload" class="btn-upload-label">
+                  <span>📁 Seleccionar Archivo</span>
+                </label>
+                <input type="url" v-model="newArtwork.imagen_url" required placeholder="O pega una URL: https://..." class="modal-input file-url-input" />
+              </div>
+              <div v-if="uploadingImage" class="upload-loader">Subiendo imagen...</div>
+              <div v-if="uploadError" class="upload-error-text">{{ uploadError }}</div>
+              <div v-if="newArtwork.imagen_url" class="image-preview-container">
+                <img :src="newArtwork.imagen_url" class="preview-img" />
+              </div>
             </div>
 
             <div class="modal-footer">
               <button type="button" @click="closeFormModal" class="btn-cancel">Cancelar</button>
-              <button type="submit" class="btn-save" :disabled="submitting">
+              <button type="submit" class="btn-save" :disabled="submitting || uploadingImage">
                 <span v-if="submitting">Guardando...</span>
+                <span v-else-if="isEditing">Guardar Cambios</span>
                 <span v-else>Guardar Obra</span>
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+
+      <!-- Create/Edit Collection Modal -->
+      <div v-if="showCollectionModal" class="modal-overlay" @click.self="closeCollectionModal">
+        <div class="modal-card">
+          <!-- Cybersigil Corner Details -->
+          <div class="modal-sigil top-left"></div>
+          <div class="modal-sigil top-right"></div>
+          <div class="modal-sigil bottom-left"></div>
+          <div class="modal-sigil bottom-right"></div>
+          
+          <header class="modal-header">
+            <h3>{{ isEditingCollection ? 'Editar Colección' : 'Crear Nueva Colección' }}</h3>
+            <button @click="closeCollectionModal" class="btn-close-modal">✕</button>
+          </header>
+
+          <form @submit.prevent="handleSubmitCollection" class="modal-form">
+            <div v-if="collectionFormError" class="form-error-alert">{{ collectionFormError }}</div>
+
+            <div class="form-group">
+              <label>Nombre de la Colección *</label>
+              <input type="text" v-model="newCollection.nombre" required placeholder="Ej. Mitologías Perdidas" class="modal-input" />
+            </div>
+
+            <div class="form-group">
+              <label>Descripción (Opcional)</label>
+              <textarea v-model="newCollection.descripcion" rows="4" placeholder="Describe el concepto de esta colección..." class="modal-input textarea"></textarea>
+            </div>
+
+            <div class="modal-footer">
+              <button type="button" @click="closeCollectionModal" class="btn-cancel">Cancelar</button>
+              <button type="submit" class="btn-save" :disabled="submittingCollection">
+                <span v-if="submittingCollection">Guardando...</span>
+                <span v-else-if="isEditingCollection">Guardar Cambios</span>
+                <span v-else>Crear Colección</span>
               </button>
             </div>
           </form>
@@ -869,5 +1232,131 @@ onMounted(() => {
 @keyframes spin {
   0% { transform: rotate(0deg); }
   100% { transform: rotate(360deg); }
+}
+
+.btn-edit {
+  background: transparent;
+  color: #c5a059;
+  border: 1px solid rgba(197, 160, 89, 0.3);
+  padding: 0.35rem 0.8rem;
+  font-size: 0.75rem;
+  cursor: pointer;
+  transition: all 0.3s;
+}
+
+.btn-edit:hover {
+  background: rgba(197, 160, 89, 0.15);
+  border-color: #c5a059;
+}
+
+/* Upload component styling */
+.upload-container {
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+  width: 100%;
+}
+
+.file-input-hidden {
+  display: none;
+}
+
+.btn-upload-label {
+  background: #1c1b18;
+  border: 1px solid rgba(197, 160, 89, 0.4);
+  color: #c5a059;
+  padding: 0.65rem 1.2rem;
+  font-size: 0.85rem;
+  cursor: pointer;
+  white-space: nowrap;
+  font-family: 'Outfit', sans-serif;
+  transition: all 0.3s;
+}
+
+.btn-upload-label:hover {
+  background: rgba(197, 160, 89, 0.1);
+  border-color: #c5a059;
+}
+
+.file-url-input {
+  flex-grow: 1;
+}
+
+.upload-loader {
+  font-size: 0.8rem;
+  color: #c5a059;
+  font-style: italic;
+  margin-top: 0.25rem;
+}
+
+.upload-error-text {
+  font-size: 0.8rem;
+  color: #fda4af;
+  margin-top: 0.25rem;
+}
+
+.image-preview-container {
+  margin-top: 0.75rem;
+  width: 120px;
+  height: 120px;
+  border: 1px solid rgba(197, 160, 89, 0.2);
+  padding: 3px;
+  background: #0d0d0c;
+}
+
+.preview-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* Tabs Navigation */
+.admin-tabs {
+  display: flex;
+  gap: 1.5rem;
+  max-width: 1100px;
+  margin: 0 auto 1.5rem auto;
+  border-bottom: 1px solid rgba(197, 160, 89, 0.15);
+  padding-bottom: 0.25rem;
+}
+
+.tab-btn {
+  background: transparent;
+  border: none;
+  color: #a39b8c;
+  padding: 0.5rem 1rem;
+  font-family: 'Cinzel', serif;
+  font-size: 0.9rem;
+  letter-spacing: 0.05em;
+  cursor: pointer;
+  position: relative;
+  transition: all 0.3s;
+}
+
+.tab-btn:hover {
+  color: #c5a059;
+}
+
+.tab-btn.active {
+  color: #f4f0e6;
+  font-weight: bold;
+}
+
+.tab-btn.active::after {
+  content: '';
+  position: absolute;
+  bottom: -0.35rem;
+  left: 0;
+  width: 100%;
+  height: 2px;
+  background: #c5a059;
+  box-shadow: 0 0 8px #c5a059;
+}
+
+/* Textarea input style */
+.modal-input.textarea {
+  resize: vertical;
+  font-family: 'Outfit', sans-serif;
+  line-height: 1.5;
 }
 </style>
