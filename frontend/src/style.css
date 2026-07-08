@@ -1,39 +1,288 @@
-/* Global Styles Reset & Custom Scrollbar */
+/* ==========================================================================
+   Y2K Webcore Edition - Global Stylesheet
+   ========================================================================== */
+
+:root {
+  --y2k-blue: #0c35fc;
+  --y2k-magenta: #ff00ff;
+  --y2k-yellow: #ffff00;
+  --y2k-cyan: #00ffff;
+  --win-grey: #c0c0c0;
+  --win-dark-grey: #808080;
+  --win-border-light: #ffffff;
+  --win-border-dark: #808080;
+}
+
+/* Reset & Scrollbar */
 html, body {
   margin: 0;
   padding: 0;
-  background-color: #0d0d0c;
-  color: #f4f0e6;
-  font-family: 'Outfit', sans-serif;
+  color: #000000;
+  font-family: 'Outfit', 'Tahoma', 'MS Sans Serif', sans-serif;
   min-height: 100vh;
-  scroll-behavior: smooth;
+  overflow-x: hidden;
 }
 
-/* Custom Gothic scrollbar */
+body.theme-y2k {
+  background-color: var(--y2k-blue);
+  /* Retro Y2K Halftone Background Pattern */
+  background-image: 
+    radial-gradient(rgba(0, 0, 0, 0.3) 18%, transparent 19%),
+    radial-gradient(rgba(0, 0, 0, 0.3) 18%, transparent 19%);
+  background-size: 16px 16px;
+  background-position: 0 0, 8px 8px;
+  background-attachment: fixed;
+}
+
+body.theme-gothic {
+  background-color: #0d0d0c;
+  background-image: none;
+}
+
+/* Classic Windows 95 Beveled Scrollbar */
 ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 16px;
+  height: 16px;
+  background-color: #dfdfdf;
 }
 
 ::-webkit-scrollbar-track {
-  background: #0d0d0c;
+  background-image: 
+    radial-gradient(#c0c0c0 25%, transparent 25%),
+    radial-gradient(#c0c0c0 25%, transparent 25%);
+  background-size: 4px 4px;
+  background-position: 0 0, 2px 2px;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #1c1b18;
-  border: 1px solid #c5a059;
+  background-color: var(--win-grey);
+  border-top: 2px solid var(--win-border-light);
+  border-left: 2px solid var(--win-border-light);
+  border-right: 2px solid var(--win-border-dark);
+  border-bottom: 2px solid var(--win-border-dark);
+  box-shadow: 1px 1px 0px 0px #000000;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #800020;
+  background-color: #d4d0c8;
 }
 
 #app {
   width: 100%;
 }
 
-/* Global utility styles */
-h1, h2, h3, h4, h5, h6 {
-  font-family: 'Cinzel', serif;
-  margin: 0;
+/* ==========================================================================
+   Windows 95 / Classic OS Style Components
+   ========================================================================== */
+
+/* Classic Beveled Box styling */
+.win95-inset {
+  border-top: 2px solid var(--win-border-dark);
+  border-left: 2px solid var(--win-border-dark);
+  border-right: 2px solid var(--win-border-light);
+  border-bottom: 2px solid var(--win-border-light);
+  background-color: #ffffff;
+  color: #000000;
+  box-shadow: inset 1px 1px 0px 0px #000000;
+}
+
+.win95-outset {
+  border-top: 2px solid var(--win-border-light);
+  border-left: 2px solid var(--win-border-light);
+  border-right: 2px solid var(--win-border-dark);
+  border-bottom: 2px solid var(--win-border-dark);
+  background-color: var(--win-grey);
+  box-shadow: 1px 1px 0px 0px #000000;
+}
+
+/* Draggable Windows Style */
+.win95-window {
+  background-color: var(--win-grey);
+  border-top: 2px solid var(--win-border-light);
+  border-left: 2px solid var(--win-border-light);
+  border-right: 2px solid var(--win-border-dark);
+  border-bottom: 2px solid var(--win-border-dark);
+  box-shadow: 1px 1px 0px 0px #000000;
+  padding: 3px;
+  position: absolute;
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+}
+
+.win95-window.purple-border {
+  border: 3px solid #b373fa;
+  box-shadow: 0px 0px 10px rgba(179, 115, 250, 0.8), 2px 2px 0px #000000;
+  background-color: #ffffff;
+}
+
+.win95-title-bar {
+  background: linear-gradient(90deg, #000080, #1084d0);
+  color: #ffffff;
+  font-family: 'Tahoma', 'MS Sans Serif', sans-serif;
+  font-weight: bold;
+  font-size: 11px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 3px 4px 3px 6px;
+  user-select: none;
+  cursor: move;
+}
+
+.win95-title-bar.purple-title {
+  background: linear-gradient(90deg, #6c1d7e, #b373fa);
+}
+
+.win95-title-text {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.win95-title-bar-controls {
+  display: flex;
+  gap: 2px;
+}
+
+.win95-btn {
+  background-color: var(--win-grey);
+  border-top: 1.5px solid var(--win-border-light);
+  border-left: 1.5px solid var(--win-border-light);
+  border-right: 1.5px solid var(--win-border-dark);
+  border-bottom: 1.5px solid var(--win-border-dark);
+  box-shadow: 0.5px 0.5px 0px 0px #000000;
+  color: #000000;
+  font-family: 'Courier New', monospace;
+  font-weight: bold;
+  font-size: 10px;
+  width: 16px;
+  height: 14px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  cursor: pointer;
+  padding: 0;
+  outline: none;
+}
+
+.win95-btn:active {
+  border-top: 1.5px solid var(--win-border-dark);
+  border-left: 1.5px solid var(--win-border-dark);
+  border-right: 1.5px solid var(--win-border-light);
+  border-bottom: 1.5px solid var(--win-border-light);
+  box-shadow: none;
+  padding: 1px 0 0 1px;
+}
+
+/* ==========================================================================
+   Y2K Graphic Design Elements
+   ========================================================================== */
+
+/* WordArt Styling */
+.wordart-coming-soon {
+  font-family: 'Cinzel', 'Lora', serif;
+  font-weight: 900;
+  font-size: 2.8rem;
+  color: var(--y2k-yellow);
+  text-transform: uppercase;
+  text-shadow: 
+    0 0 5px var(--y2k-yellow),
+    0 0 15px var(--y2k-magenta),
+    3px 3px 0px #000000;
+  letter-spacing: -2px;
+  font-style: italic;
+  animation: wordart-pulse 2s infinite ease-in-out;
+  transform: skewX(-10deg);
+  line-height: 1;
+}
+
+@keyframes wordart-pulse {
+  0%, 100% {
+    text-shadow: 0 0 5px var(--y2k-yellow), 0 0 15px var(--y2k-magenta), 3px 3px 0px #000000;
+    transform: scale(1) skewX(-10deg);
+  }
+  50% {
+    text-shadow: 0 0 10px var(--y2k-yellow), 0 0 25px var(--y2k-magenta), 5px 5px 0px #000000;
+    transform: scale(1.05) skewX(-10deg);
+  }
+}
+
+/* Cyber Star SVG Animation */
+.cyber-star {
+  position: absolute;
+  pointer-events: none;
+  animation: spin-star 8s linear infinite;
+  z-index: 10;
+}
+
+@keyframes spin-star {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+/* Halftone Starburst background shape behind monitor */
+.starburst-bg {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 750px;
+  height: 750px;
+  background-color: var(--y2k-yellow);
+  clip-path: polygon(
+    50% 0%, 55% 35%, 85% 15%, 70% 45%, 100% 50%, 70% 55%, 85% 85%, 55% 65%, 
+    50% 100%, 45% 65%, 15% 85%, 30% 55%, 0% 50%, 30% 45%, 15% 15%, 45% 35%
+  );
+  filter: drop-shadow(0 0 30px rgba(255, 230, 0, 0.4));
+  z-index: 1;
+  pointer-events: none;
+}
+
+/* Draggable Stickers */
+.y2k-sticker {
+  position: absolute;
+  padding: 10px 18px;
+  border-radius: 40px;
+  font-family: 'VT323', monospace;
+  font-size: 1.5rem;
+  font-weight: bold;
+  border: 3px solid #ffffff;
+  color: #ffffff;
+  box-shadow: 3px 3px 0px #000000, 0 5px 15px rgba(0,0,0,0.3);
+  cursor: grab;
+  z-index: 60;
+  user-select: none;
+  transition: transform 0.1s ease;
+}
+
+.y2k-sticker:active {
+  cursor: grabbing;
+  transform: scale(1.05);
+}
+
+.y2k-sticker.pink-vibe {
+  background-color: var(--y2k-magenta);
+  transform: rotate(-5deg);
+}
+
+.y2k-sticker.blue-vibe {
+  background-color: #1084d0;
+  transform: rotate(7deg);
+}
+
+.y2k-sticker.yellow-vibe {
+  background-color: var(--y2k-yellow);
+  color: #000000;
+  border-color: #000000;
+  transform: rotate(-10deg);
+}
+
+/* Custom cursors */
+.classic-cursor {
+  cursor: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><path d="M0 0l16 16-4-1 4 8-3 2-4-8-3 3z" fill="white" stroke="black" stroke-width="2"/></svg>'), auto;
 }
