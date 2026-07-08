@@ -1,5 +1,4 @@
-import os
-import uuid
+import cloudinary.uploader
 from fastapi import APIRouter, Depends, HTTPException, status, Query, UploadFile, File, Request
 from typing import List, Optional
 from decimal import Decimal
@@ -12,38 +11,56 @@ router = APIRouter(prefix="/artworks", tags=["Artworks"])
 
 @router.post("/upload", status_code=status.HTTP_201_CREATED)
 async def upload_artwork_image(
-    request: Request,
     file: UploadFile = File(...),
     current_user: dict = Depends(get_current_user)
 ):
     """
-    Protected endpoint (Admin-only): Upload an artwork image.
-    Saves the file to static/uploads and returns the absolute URL.
+    Protected endpoint (Admin-only): Upload an artwork image to Cloudinary.
+    Returns the secure HTTPS URL hosted on Cloudinary's CDN.
     """
     allowed_extensions = {".jpg", ".jpeg", ".png", ".webp", ".gif"}
-    file_ext = os.path.splitext(file.filename)[1].lower()
-    if file_ext not in allowed_extensions:
+    # Extract extension safely even if filename is None
+    filename = file.filename or ""
+    ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
+    if f".{ext}" not in allowed_extensions:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Tipo de archivo no permitido. Tipos permitidos: {', '.join(allowed_extensions)}"
         )
-    
-    unique_filename = f"{uuid.uuid4()}{file_ext}"
-    upload_dir = "static/uploads"
-    file_path = os.path.join(upload_dir, unique_filename)
-    
+
     try:
-        with open(file_path, "wb") as buffer:
-            while content := await file.read(1024 * 1024):
-                buffer.write(content)
+        # Read file contents into memory for Cloudinary upload
+        file_bytes = await file.read()
+
+        # Upload to Cloudinary (folder "artfolio" keeps assets organized)
+        result = cloudinary.uploader.upload(
+            file_bytes,
+            folder="artfolio",
+            resource_type="image",
+            allowed_formats=["jpg", "jpeg", "png", "webp", "gif"]
+        )
+
+        secure_url = result.get("secure_url")
+        if not secure_url:
+            raise ValueError("Cloudinary no devolvió una URL segura en la respuesta")
+
+        return {"imagen_url": secure_url}
+
+    except cloudinary.exceptions.Error as ce:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Error al comunicarse con Cloudinary: {str(ce)}"
+        )
+    except ValueError as ve:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(ve)
+        )
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error al guardar la imagen: {str(e)}"
+            detail=f"Error inesperado al subir la imagen: {str(e)}"
         )
-    
-    base_url = str(request.base_url).rstrip("/")
-    return {"imagen_url": f"{base_url}/static/uploads/{unique_filename}"}
 
 @router.get("/", response_model=List[ArtworkResponse])
 async def get_artworks(

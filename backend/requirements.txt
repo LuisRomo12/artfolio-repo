@@ -7,3 +7,6 @@ python-multipart>=0.0.9
 pydantic>=2.6.4
 pydantic-settings>=2.2.1
 python-dotenv>=1.0.1
+cloudinary>=1.40.0
+nh3>=0.2.18
+

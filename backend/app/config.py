@@ -1,6 +1,7 @@
 import os
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import Field
+import cloudinary
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
@@ -17,4 +18,21 @@ class Settings(BaseSettings):
     HOST: str = Field(default="0.0.0.0")
     PORT: int = Field(default=8000)
 
+    # Cloudinary credentials
+    CLOUDINARY_CLOUD_NAME: str = Field(default="")
+    CLOUDINARY_API_KEY: str = Field(default="")
+    CLOUDINARY_API_SECRET: str = Field(default="")
+
+    # CORS configuration
+    ALLOWED_ORIGINS: str = Field(default="http://localhost:5173")
+
 settings = Settings()
+
+def init_cloudinary():
+    """Initialize the Cloudinary SDK with credentials from environment variables."""
+    cloudinary.config(
+        cloud_name=settings.CLOUDINARY_CLOUD_NAME,
+        api_key=settings.CLOUDINARY_API_KEY,
+        api_secret=settings.CLOUDINARY_API_SECRET,
+        secure=True
+    )

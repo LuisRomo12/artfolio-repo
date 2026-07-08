@@ -3,7 +3,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from contextlib import asynccontextmanager
-from app.config import settings
+from app.config import settings, init_cloudinary
 from app.database import init_db_pool, close_db_pool
 from app.routes import auth, collections, artworks
 
@@ -11,8 +11,8 @@ from app.routes import auth, collections, artworks
 async def lifespan(app: FastAPI):
     # Startup: Initialize the PostgreSQL connection pool
     init_db_pool()
-    # Ensure static/uploads folder exists
-    os.makedirs("static/uploads", exist_ok=True)
+    # Startup: Initialize Cloudinary SDK
+    init_cloudinary()
     yield
     # Shutdown: Close the PostgreSQL connection pool
     close_db_pool()
@@ -24,10 +24,12 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-# Configure CORS
+# Configure CORS with secure origin mapping parsed from settings
+origins = [origin.strip() for origin in settings.ALLOWED_ORIGINS.split(",") if origin.strip()]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Adjust for production
+    allow_origins=origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

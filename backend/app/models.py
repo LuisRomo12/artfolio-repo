@@ -1,7 +1,8 @@
-from pydantic import BaseModel, EmailStr, Field, HttpUrl
+from pydantic import BaseModel, EmailStr, Field, HttpUrl, field_validator
 from typing import Optional, List
 from datetime import datetime
 from decimal import Decimal
+import nh3
 
 # --- User Schemas ---
 class UserBase(BaseModel):
@@ -29,6 +30,14 @@ class CollectionBase(BaseModel):
     nombre: str = Field(..., max_length=255)
     descripcion: Optional[str] = None
 
+    @field_validator('nombre', 'descripcion')
+    @classmethod
+    def sanitize_text_fields(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return v
+        # Prevent XSS: Strips all HTML tags completely, ensuring only plain text remains
+        return nh3.clean(v, tags=set())
+
 class CollectionCreate(CollectionBase):
     pass
 
@@ -49,6 +58,14 @@ class ArtworkBase(BaseModel):
     imagen_url: str = Field(..., description="URL or relative path to the uploaded artwork image")
     estado: str = Field(..., pattern="^(Disponible|Vendida|En exhibición)$", description="Must be 'Disponible', 'Vendida', or 'En exhibición'")
     coleccion_id: Optional[int] = None
+
+    @field_validator('titulo', 'tecnica', 'dimensiones')
+    @classmethod
+    def sanitize_text_fields(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return v
+        # Prevent XSS: Strips all HTML tags completely, ensuring only plain text remains
+        return nh3.clean(v, tags=set())
 
 class ArtworkCreate(ArtworkBase):
     pass
