@@ -1,4 +1,6 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+import os
+import uuid
+from fastapi import APIRouter, Depends, HTTPException, status, Query, UploadFile, File, Request
 from typing import List, Optional
 from decimal import Decimal
 from psycopg2.errors import ForeignKeyViolation
@@ -7,6 +9,41 @@ from app.models import ArtworkResponse, ArtworkCreate
 from app.routes.auth import get_current_user
 
 router = APIRouter(prefix="/artworks", tags=["Artworks"])
+
+@router.post("/upload", status_code=status.HTTP_201_CREATED)
+async def upload_artwork_image(
+    request: Request,
+    file: UploadFile = File(...),
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Protected endpoint (Admin-only): Upload an artwork image.
+    Saves the file to static/uploads and returns the absolute URL.
+    """
+    allowed_extensions = {".jpg", ".jpeg", ".png", ".webp", ".gif"}
+    file_ext = os.path.splitext(file.filename)[1].lower()
+    if file_ext not in allowed_extensions:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Tipo de archivo no permitido. Tipos permitidos: {', '.join(allowed_extensions)}"
+        )
+    
+    unique_filename = f"{uuid.uuid4()}{file_ext}"
+    upload_dir = "static/uploads"
+    file_path = os.path.join(upload_dir, unique_filename)
+    
+    try:
+        with open(file_path, "wb") as buffer:
+            while content := await file.read(1024 * 1024):
+                buffer.write(content)
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error al guardar la imagen: {str(e)}"
+        )
+    
+    base_url = str(request.base_url).rstrip("/")
+    return {"imagen_url": f"{base_url}/static/uploads/{unique_filename}"}
 
 @router.get("/", response_model=List[ArtworkResponse])
 async def get_artworks(
