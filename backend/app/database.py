@@ -1,6 +1,7 @@
 import psycopg2
 from psycopg2 import pool
 from contextlib import contextmanager
+from urllib.parse import urlparse
 import logging
 from app.config import settings
 
@@ -9,14 +10,27 @@ logger = logging.getLogger(__name__)
 # Connection pool setup
 db_pool = None
 
+def _parse_db_url(url: str) -> dict:
+    """Parse DATABASE_URL into psycopg2 keyword arguments, adding client_encoding=UTF8."""
+    p = urlparse(url)
+    return {
+        "host": p.hostname,
+        "port": p.port or 5432,
+        "user": p.username,
+        "password": p.password,
+        "dbname": p.path.lstrip("/"),
+        "client_encoding": "UTF8",
+    }
+
 def init_db_pool():
     global db_pool
     if db_pool is None:
         try:
+            conn_kwargs = _parse_db_url(settings.DATABASE_URL)
             db_pool = psycopg2.pool.ThreadedConnectionPool(
                 minconn=1,
                 maxconn=20,
-                dsn=settings.DATABASE_URL
+                **conn_kwargs
             )
             logger.info("PostgreSQL ThreadedConnectionPool initialized.")
         except Exception as e:

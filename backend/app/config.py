@@ -6,7 +6,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         # Search for .env first in root directory, then backend directory
         env_file=os.path.join(os.path.dirname(os.path.dirname(__file__)), ".env"),
-        env_file_encoding="utf-8",
+        env_file_encoding="latin-1",
         extra="ignore"
     )
 
