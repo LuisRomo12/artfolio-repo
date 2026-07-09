@@ -62,7 +62,7 @@ obras = [
         "Carboncillo sobre papel hecho a mano",
         "40 x 30 cm", 2023, 350.00,
         "https://images.unsplash.com/photo-1579783928621-7a13d66a62d1?q=80&w=800&auto=format&fit=crop",
-        "En exhibicion", col2
+        "En exhibición", col2
     ),
     (
         "Memento Mori II",
@@ -97,7 +97,7 @@ obras = [
         "Pastel sobre papel Canson",
         "50 x 40 cm", 2024, 480.00,
         "https://images.unsplash.com/photo-1577083552431-6e5fd01988ec?q=80&w=800&auto=format&fit=crop",
-        "En exhibicion", col2
+        "En exhibición", col2
     ),
     (
         "Naturaleza Muerta con Luz",
