@@ -27,7 +27,7 @@ cur.execute("""
     VALUES ('artista@artfolio.com', %s)
     ON CONFLICT (email) DO UPDATE SET password_hash = EXCLUDED.password_hash
 """, (hashed,))
-print("✓ Usuario artista@artfolio.com creado/actualizado")
+print("[OK] Usuario artista@artfolio.com creado/actualizado")
 
 # ── 2. Collections ────────────────────────────────────────────────────────────
 colecciones = [
@@ -40,7 +40,7 @@ for nombre, desc in colecciones:
         VALUES (%s, %s)
         ON CONFLICT (nombre) DO NOTHING
     """, (nombre, desc))
-print("✓ Colecciones insertadas")
+print("[OK] Colecciones insertadas")
 
 # Fetch IDs
 cur.execute("SELECT id, nombre FROM colecciones ORDER BY id")
@@ -118,7 +118,7 @@ for titulo, tecnica, dims, ano, precio, img, estado, col_id in obras:
 conn.commit()
 cur.close()
 conn.close()
-print(f"✓ {len(obras)} obras insertadas en la base de datos")
+print(f"[OK] {len(obras)} obras insertadas en la base de datos")
 print("\nListo! Credenciales:")
 print("  Email:    artista@artfolio.com")
 print("  Password: artista123")
