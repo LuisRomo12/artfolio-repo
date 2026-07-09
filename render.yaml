@@ -22,11 +22,11 @@ services:
       - key: PORT
         value: "10000"
       - key: CLOUDINARY_CLOUD_NAME
-        sync: true
+        sync: false
       - key: CLOUDINARY_API_KEY
-        sync: true
+        sync: false
       - key: CLOUDINARY_API_SECRET
-        sync: true
+        sync: false
       - key: ALLOWED_ORIGINS
         value: "*" # Set to the frontend URL once deployed or wildcard for flexibility
 
