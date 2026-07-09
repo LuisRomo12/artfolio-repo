@@ -124,9 +124,11 @@ npm run dev
 ## 🧪 Pruebas Unitarias
 
 ### Backend (Pytest)
-Desde la carpeta `backend`:
+Las pruebas unitarias del backend se ejecutan con `pytest`. Para ver la guía detallada de ejecución y los 24 casos de prueba cubiertos, consulta el archivo [README-tests.md](file:///c:/uta/9-c/desarrollo%20web%20integral/y2k%20edicion/backend/README-tests.md) en el directorio `backend`.
+
+Para ejecutar las pruebas directamente, desde la carpeta `backend`:
 ```bash
-pytest
+python -m pytest
 ```
 
 ### Frontend (Vitest)
