@@ -8,7 +8,7 @@ import os, sys, psycopg2
 from urllib.parse import urlparse
 from passlib.context import CryptContext
 
-DATABASE_URL = "postgresql://postgres:postgres@localhost:5432/artfolio_db"
+DATABASE_URL = os.environ.get("DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/artfolio_db")
 p = urlparse(DATABASE_URL)
 
 conn = psycopg2.connect(
@@ -27,7 +27,7 @@ cur.execute("""
     VALUES ('artista@artfolio.com', %s)
     ON CONFLICT (email) DO UPDATE SET password_hash = EXCLUDED.password_hash
 """, (hashed,))
-print("✓ Usuario artista@artfolio.com creado/actualizado")
+print("[OK] Usuario artista@artfolio.com creado/actualizado")
 
 # ── 2. Collections ────────────────────────────────────────────────────────────
 colecciones = [
@@ -40,7 +40,7 @@ for nombre, desc in colecciones:
         VALUES (%s, %s)
         ON CONFLICT (nombre) DO NOTHING
     """, (nombre, desc))
-print("✓ Colecciones insertadas")
+print("[OK] Colecciones insertadas")
 
 # Fetch IDs
 cur.execute("SELECT id, nombre FROM colecciones ORDER BY id")
@@ -62,7 +62,7 @@ obras = [
         "Carboncillo sobre papel hecho a mano",
         "40 x 30 cm", 2023, 350.00,
         "https://images.unsplash.com/photo-1579783928621-7a13d66a62d1?q=80&w=800&auto=format&fit=crop",
-        "En exhibicion", col2
+        "En exhibición", col2
     ),
     (
         "Memento Mori II",
@@ -97,7 +97,7 @@ obras = [
         "Pastel sobre papel Canson",
         "50 x 40 cm", 2024, 480.00,
         "https://images.unsplash.com/photo-1577083552431-6e5fd01988ec?q=80&w=800&auto=format&fit=crop",
-        "En exhibicion", col2
+        "En exhibición", col2
     ),
     (
         "Naturaleza Muerta con Luz",
@@ -118,7 +118,7 @@ for titulo, tecnica, dims, ano, precio, img, estado, col_id in obras:
 conn.commit()
 cur.close()
 conn.close()
-print(f"✓ {len(obras)} obras insertadas en la base de datos")
+print(f"[OK] {len(obras)} obras insertadas en la base de datos")
 print("\nListo! Credenciales:")
 print("  Email:    artista@artfolio.com")
 print("  Password: artista123")

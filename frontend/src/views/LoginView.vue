@@ -2,7 +2,7 @@
 import { ref, computed } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 
-const API_URL = 'http://localhost:8000'
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000'
 const router = useRouter()
 const route = useRoute()
 

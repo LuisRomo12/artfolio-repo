@@ -1,0 +1,52 @@
+services:
+  # 1. Backend Web Service (FastAPI)
+  - type: web
+    name: artfolio-backend
+    runtime: python
+    plan: free
+    buildCommand: pip install -r backend/requirements.txt
+    startCommand: cd backend && uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: artfolio-db
+          property: connectionString
+      - key: JWT_SECRET_KEY
+        generateValue: true
+      - key: JWT_ALGORITHM
+        value: HS256
+      - key: ACCESS_TOKEN_EXPIRE_MINUTES
+        value: "1440"
+      - key: HOST
+        value: 0.0.0.0
+      - key: PORT
+        value: "10000"
+      - key: CLOUDINARY_CLOUD_NAME
+        sync: false
+      - key: CLOUDINARY_API_KEY
+        sync: false
+      - key: CLOUDINARY_API_SECRET
+        sync: false
+      - key: ALLOWED_ORIGINS
+        value: "*" # Set to the frontend URL once deployed or wildcard for flexibility
+
+  # 2. Frontend Static Site (Vue.js + Vite)
+  - type: web
+    name: artfolio-frontend
+    runtime: static
+    buildCommand: cd frontend && npm install && npm run build
+    staticPublishPath: frontend/dist
+    headers:
+      - path: /*
+        name: Cache-Control
+        value: public, max-age=31536000, immutable
+    routes:
+      # Support client-side routing in Vue Router (fallback to index.html)
+      - type: rewrite
+        source: /*
+        destination: /index.html
+
+databases:
+  # 3. PostgreSQL Managed Database
+  - name: artfolio-db
+    plan: free
