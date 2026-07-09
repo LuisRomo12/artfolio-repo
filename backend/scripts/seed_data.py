@@ -8,7 +8,7 @@ import os, sys, psycopg2
 from urllib.parse import urlparse
 from passlib.context import CryptContext
 
-DATABASE_URL = "postgresql://postgres:postgres@localhost:5432/artfolio_db"
+DATABASE_URL = os.environ.get("DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/artfolio_db")
 p = urlparse(DATABASE_URL)
 
 conn = psycopg2.connect(
