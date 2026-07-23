@@ -1,0 +1,26 @@
+# Git & CI/CD
+.git
+.gitignore
+.github
+
+# Node / Frontend
+**/node_modules
+!frontend/dist
+**/.output
+**/.vite
+
+# Python / Backend
+**/__pycache__
+**/*.pyc
+**/*.pyo
+**/*.pyd
+**/.pytest_cache
+**/venv
+**/.env
+**/.env.local
+
+# Documentación y archivos temporales
+*.md
+*.log
+.vscode
+.idea

@@ -35,7 +35,6 @@ def init_db_pool():
             logger.info("PostgreSQL ThreadedConnectionPool initialized.")
         except Exception as e:
             logger.error(f"Failed to initialize PostgreSQL connection pool: {e}")
-            raise e
 
 def close_db_pool():
     global db_pool

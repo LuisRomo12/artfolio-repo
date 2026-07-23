@@ -40,14 +40,28 @@ app.include_router(auth.router)
 app.include_router(collections.router)
 app.include_router(artworks.router)
 
+from fastapi.responses import FileResponse
+
 # Serve uploaded static files (ensure static directory exists beforehand at import-time)
 os.makedirs("static/uploads", exist_ok=True)
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
 @app.get("/")
 async def root():
+    if os.path.exists("static/frontend/index.html"):
+        return FileResponse("static/frontend/index.html")
     return {"message": "Welcome to ArtFolio API"}
 
 @app.get("/health")
 async def health():
     return {"status": "healthy"}
+
+# Serve Vue SPA static assets and client route fallback
+if os.path.exists("static/frontend"):
+    @app.get("/{full_path:path}")
+    async def serve_spa(full_path: str):
+        file_path = os.path.join("static/frontend", full_path)
+        if full_path and os.path.isfile(file_path):
+            return FileResponse(file_path)
+        return FileResponse("static/frontend/index.html")
+
