@@ -6,27 +6,23 @@ seed_data.py — Populates artfolio_db with:
 """
 import os, sys, psycopg2
 from urllib.parse import urlparse
-from passlib.context import CryptContext
+import bcrypt
 
-DATABASE_URL = "postgresql://postgres:postgres@localhost:5432/artfolio_db"
+DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/artfolio_db")
 p = urlparse(DATABASE_URL)
 
 conn = psycopg2.connect(
-    host=p.hostname, port=p.port,
+    host=p.hostname, port=p.port or 5432,
     user=p.username, password=p.password,
     dbname=p.path.lstrip("/"), client_encoding="UTF8"
 )
 cur = conn.cursor()
 
-# ── 1. User ──────────────────────────────────────────────────────────────────
-pwd_ctx = CryptContext(schemes=["bcrypt"], deprecated="auto")
-hashed  = pwd_ctx.hash("artista123")
-
 cur.execute("""
     INSERT INTO usuarios (email, password_hash)
     VALUES ('artista@artfolio.com', %s)
     ON CONFLICT (email) DO UPDATE SET password_hash = EXCLUDED.password_hash
-""", (hashed,))
+""", (bcrypt.hashpw(b"artista123", bcrypt.gensalt()).decode("utf-8"),))
 print("✓ Usuario artista@artfolio.com creado/actualizado")
 
 # ── 2. Collections ────────────────────────────────────────────────────────────
@@ -62,7 +58,7 @@ obras = [
         "Carboncillo sobre papel hecho a mano",
         "40 x 30 cm", 2023, 350.00,
         "https://images.unsplash.com/photo-1579783928621-7a13d66a62d1?q=80&w=800&auto=format&fit=crop",
-        "En exhibicion", col2
+        "En exhibición", col2
     ),
     (
         "Memento Mori II",
@@ -97,7 +93,7 @@ obras = [
         "Pastel sobre papel Canson",
         "50 x 40 cm", 2024, 480.00,
         "https://images.unsplash.com/photo-1577083552431-6e5fd01988ec?q=80&w=800&auto=format&fit=crop",
-        "En exhibicion", col2
+        "En exhibición", col2
     ),
     (
         "Naturaleza Muerta con Luz",

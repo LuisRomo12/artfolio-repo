@@ -1942,3 +1942,113 @@ No se realiza commit directo de características sobre `main`. La integración s
 1.  **[Pull Request #1 (pytest-backend)](https://github.com/LuisRomo12/artfolio-repo/pull/1):** Para fusionar `feature/pytest-backend` con las pruebas unitarias del backend.
 2.  **[Pull Request #2 (deploy-config)](https://github.com/LuisRomo12/artfolio-repo/pull/2):** Para fusionar `feature/deploy-config` con las configuraciones y dependencias del despliegue en la nube.
 3.  **[Pull Request #3 (user-manual)](https://github.com/LuisRomo12/artfolio-repo/pull/3):** Para fusionar `feature/user-manual` con el manual en Markdown para el artista.
+
+---
+
+## 8. CONTENERIZACIÓN Y DESPLIEGUE EN LA NUBE (DOCKER + RENDER)
+
+### 8.1 Proceso de Contenerización
+
+La aplicación **ArtFolio** fue contenerizada utilizando un `Dockerfile` unificado y altamente optimizado en la raíz del proyecto. Este enfoque combina el backend en Python (FastAPI) y los activos compilados del frontend SPA (Vue 3 + Vite) dentro de un solo contenedor ligero basado en `python:3.10-slim`.
+
+#### 1. Estructura del `Dockerfile`
+* **Imagen Base:** `python:3.10-slim` para minimizar la huella de memoria y vulnerabilidades.
+* **Empaquetado Frontend:** El frontend compilado (`frontend/dist`) se inyecta directamente dentro de la carpeta `static/frontend` gestionada por FastAPI como archivos estáticos.
+* **Manejo Dinámico de Puertos:** Permite la inyección dinámica de la variable `$PORT` requerida por proveedores de nube Serverless como Render o Cloud Run.
+
+```dockerfile
+FROM python:3.10-slim AS runtime
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PORT=8000
+
+WORKDIR /app
+
+COPY backend/requirements.txt ./
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY backend/ ./
+COPY frontend/dist ./static/frontend
+
+EXPOSE 8000
+
+CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}"]
+```
+
+#### 2. Configuración de `.dockerignore`
+Se excluyen archivos temporales, logs, node_modules y entornos virtuales locales para acelerar el tiempo de construcción:
+```text
+.venv
+__pycache__
+*.pyc
+node_modules
+.git
+.env
+```
+
+---
+
+### 8.2 Plataforma de Nube Seleccionada y Justificación
+
+Para el despliegue en producción se seleccionó **Render** (Platform as a Service - PaaS) integrando dos servicios gestionados:
+
+1. **Web Service (Contenedor Docker):** Ejecuta la imagen de la aplicación empaquetada.
+2. **Managed PostgreSQL Database:** Base de datos remota PostgreSQL hospedada con SSL habilitado.
+
+#### Razones de la Selección:
+* **Soporte Nativo de Docker:** Compila y despliega directamente a partir del `Dockerfile` presente en el repositorio.
+* **Escalabilidad y Certificados SSL:** Proporciona HTTPS automático en la URL pública y gestión de dominios sin costo adicional.
+* **Aislamiento de Entorno:** Elimina dependencias de infraestructura local, ejecutando la aplicación en contenedores aislados e idénticos a desarrollo.
+
+---
+
+### 8.3 Guía Paso a Paso del Despliegue
+
+#### Paso 1: Compilación del Frontend
+```bash
+cd frontend
+npm run build
+cd ..
+```
+
+#### Paso 2: Construcción de la Imagen Docker Local
+```bash
+docker build -t artfolio:latest .
+```
+
+#### Paso 3: Migración y Populado de la Base de Datos Remota (PostgreSQL en Nube)
+Se utilizó un contenedor efímero para aplicar las migraciones e insertar los datos semilla (obras, colecciones y usuario administrador) en el PostgreSQL de Render:
+```powershell
+docker run --rm -e DATABASE_URL="postgresql://artfolio_db_user:...@oregon-postgres.render.com/artfolio_db" artfolio:latest python scripts/db_migrate.py
+
+docker run --rm -e DATABASE_URL="postgresql://artfolio_db_user:...@oregon-postgres.render.com/artfolio_db" artfolio:latest python scripts/seed_data.py
+```
+
+#### Paso 4: Creación del Servicio Web en Render
+1. Creación del servicio de tipo **Web Service** conectado al repositorio de GitHub.
+2. Selección del runtime **Docker**.
+3. Configuración de Variables de Entorno:
+   * `DATABASE_URL`: Cadena de conexión al servidor de PostgreSQL gestionado en la nube.
+   * `JWT_SECRET_KEY`: Clave secreta para la firma de tokens administrativos JWT.
+4. Despliegue automático y asignación de la URL Pública final.
+
+---
+
+### 8.4 Bitácora de Errores Resueltos
+
+| # | Incidencia / Error Observado | Causa Raíz | Solución Aplicada |
+|---|------------------------------|------------|-------------------|
+| 1 | `Connection refused at localhost:5432` dentro del contenedor | En Docker, `localhost` se refiere al propio contenedor y no al sistema operativo anfitrión. | Se configuró `host.docker.internal` para pruebas locales en Windows y la URL remota en la nube. |
+| 2 | `Bind for 0.0.0.0:8000 failed: port is already allocated` | Existían contenedores o procesos previos ocupando el puerto en Docker Desktop. | Se detuvieron los contenedores activos mediante `docker stop` y la consola gráfica de Docker Desktop. |
+| 3 | `CheckViolation: new row for relation "obras" violates check constraint` | Discrepancia de acentuación en el script de datos semilla (`En exhibicion` sin tilde). | Se corrigió el string a `En exhibición` cumpliendo con la restricción `CHECK` de la tabla SQL. |
+| 4 | `ValueError: password cannot be longer than 72 bytes` | Incompatibilidad conocida entre `passlib` y versiones recientes de `bcrypt` (4.x). | Se migró el script de seed a utilizar la librería nativa `bcrypt.hashpw` directamente. |
+
+---
+
+### 8.5 Conclusión: Beneficios de Contenedores y Nube
+
+1. **Portabilidad Absoluta ("Build once, run anywhere"):** La aplicación se comporta exactamente igual en el entorno de desarrollo Windows con Docker Desktop que en la infraestructura Serverless de Render en Linux.
+2. **Despliegue Continuo e Infraestructura como Código:** El `Dockerfile` actúa como la especificación exacta de la infraestructura, eliminando los problemas de "en mi máquina sí funciona".
+3. **Escalabilidad y Seguridad:** El desacoplamiento entre el almacenamiento de imágenes (Cloudinary), la base de datos (PostgreSQL Cloud) y la lógica de aplicación en contenedores permite escalar cada capa de forma independiente y segura.
+
