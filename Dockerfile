@@ -1,11 +1,11 @@
 # ==========================================
 # Etapa 1: Compilación del Frontend (Node.js Vue 3)
 # ==========================================
-FROM node:18-alpine AS frontend-builder
+FROM node:20-alpine AS frontend-builder
 WORKDIR /app/frontend
 
 COPY frontend/package*.json ./
-RUN npm install
+RUN npm install --include=dev
 
 COPY frontend/ ./
 RUN npm run build
